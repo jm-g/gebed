@@ -104,3 +104,40 @@ func TestEdges(t *testing.T) {
 		t.Error("malformed external ref accepted")
 	}
 }
+
+// bd list carries raw edge records in .dependencies, cross-repo links included;
+// an earlier decoder expected the resolved form and failed the whole list.
+func TestBdListRawDependencies(t *testing.T) {
+	bs, err := DecodeBdList(fixture(t, "bd-list-deps.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ext, local int
+	for _, b := range bs {
+		for _, d := range b.Deps {
+			if d.On.Project != "" {
+				ext++
+			} else {
+				local++
+			}
+		}
+	}
+	if ext != 1 || local != 1 {
+		t.Fatalf("external=%d local=%d: %+v", ext, local, bs)
+	}
+}
+
+func TestDependencyWithoutTarget(t *testing.T) {
+	raw := `[{"id":"a","title":"t","status":"open","priority":1,"issue_type":"task","dependencies":[{"type":"blocks"}]}]`
+	if _, err := DecodeShow([]byte(raw)); err == nil {
+		t.Error("dependency with no target accepted")
+	}
+}
+
+func TestShowExternalDependency(t *testing.T) {
+	raw := `[{"id":"a","title":"t","status":"open","priority":1,"issue_type":"task","dependencies":[{"id":"external:bd:bd-rfo","dependency_type":"related"}]}]`
+	b, err := DecodeShow([]byte(raw))
+	if err != nil || len(b.Deps) != 1 || b.Deps[0].On.Project != "bd" {
+		t.Fatalf("%v %+v", err, b.Deps)
+	}
+}

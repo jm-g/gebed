@@ -30,6 +30,7 @@ func New(reg *registry.Registry, run store.Runner, themes func() []theme.Scheme,
 	mux.HandleFunc("POST /api/repos/{name}/ops", a.applyOp)
 	mux.HandleFunc("GET /api/repos/{name}/beads/{id}/comments", a.listComments)
 	mux.HandleFunc("GET /api/sessions", a.listSessions)
+	mux.HandleFunc("GET /api/links", a.links)
 	mux.HandleFunc("GET /api/repos/{name}/edges", a.listEdges)
 	mux.HandleFunc("GET /api/repos/{name}/version", a.version)
 	mux.Handle("/", http.FileServerFS(sub))

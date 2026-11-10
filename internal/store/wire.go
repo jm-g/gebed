@@ -33,10 +33,21 @@ type issue struct {
 	Deps           []depRow   `json:"dependencies"`
 }
 
-// depRow is an entry of `show` .dependencies: the target issue plus edge type.
+// depRow is an entry of `.dependencies`. br and bd show it as the resolved target
+// issue (id, dependency_type); bd list shows the raw edge (depends_on_id, type),
+// which also holds cross-repo links that show leaves out.
 type depRow struct {
-	ID   string `json:"id"`
-	Type string `json:"dependency_type"`
+	ID             string `json:"id"`
+	DependencyType string `json:"dependency_type"`
+	DependsOnID    string `json:"depends_on_id"`
+	Type           string `json:"type"`
+}
+
+func (d depRow) target() (string, string) {
+	if d.ID != "" {
+		return d.ID, d.DependencyType
+	}
+	return d.DependsOnID, d.Type
 }
 
 func (w issue) bead() (model.Bead, error) {
@@ -58,13 +69,14 @@ func (w issue) bead() (model.Bead, error) {
 	}
 	deps := make([]model.Dep, 0, len(w.Deps))
 	for _, d := range w.Deps {
-		on, err := model.ParseID(d.ID)
+		to, kind := d.target()
+		on, err := model.ParseRef(to)
 		if err != nil {
 			return model.Bead{}, fmt.Errorf("%s dep: %w", w.ID, err)
 		}
-		t, err := model.ParseDepType(d.Type)
+		t, err := model.ParseDepType(kind)
 		if err != nil {
-			return model.Bead{}, fmt.Errorf("%s dep %s: %w", w.ID, d.ID, err)
+			return model.Bead{}, fmt.Errorf("%s dep %s: %w", w.ID, to, err)
 		}
 		deps = append(deps, model.Dep{On: on, Type: t})
 	}

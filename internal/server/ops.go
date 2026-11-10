@@ -147,3 +147,6 @@ func (a *api) applyOp(w http.ResponseWriter, r *http.Request) {
 	}
 	reply(w, http.StatusOK, res)
 }
+
+// OpNames lists every op parseOp accepts; the MCP server must expose each one.
+var OpNames = []string{"create", "setTitle", "setStatus", "setPriority", "addLabel", "removeLabel", "close", "reopen", "addDep", "addComment"}

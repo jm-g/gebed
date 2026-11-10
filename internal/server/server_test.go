@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -252,6 +254,73 @@ func TestAddDepCrossRepo(t *testing.T) {
 		ran = nil
 		if rec := get(h, "POST", "/api/repos/proj/ops", `{"op":"addDep","from":"x-1","on":"`+bad+`","type":"blocks"}`); rec.Code != 422 || ran != nil {
 			t.Errorf("%s: %d %q", bad, rec.Code, ran)
+		}
+	}
+}
+
+func TestLinks(t *testing.T) {
+	mkRepo := func(name string) string {
+		d := filepath.Join(t.TempDir(), name)
+		if err := os.MkdirAll(filepath.Join(d, ".beads"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return d
+	}
+	reg, _ := registry.Load(filepath.Join(t.TempDir(), "repos.json"))
+	da, db := mkRepo("alpha"), mkRepo("beta")
+	for _, d := range []string{da, db} {
+		if _, err := reg.Add(d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	row := func(id, status string, deps int) string {
+		return `{"id":"` + id + `","title":"T ` + id + `","status":"` + status + `","priority":1,"issue_type":"task","dependency_count":` + strconv.Itoa(deps) + `,"created_at":"2026-11-10T22:47:03Z","updated_at":"2026-11-10T22:47:03Z"}`
+	}
+	h := New(reg, func(_ context.Context, dir, _ string, args ...string) ([]byte, error) {
+		switch {
+		case args[0] == "dep" && filepath.Base(dir) == "alpha":
+			return []byte(`[{"issue_id":"a-1","depends_on_id":"external:beta:b-1","type":"blocks"},{"issue_id":"a-1","depends_on_id":"external:gone:g-1","type":"related"},{"issue_id":"a-1","depends_on_id":"a-2","type":"blocks"}]`), nil
+		case filepath.Base(dir) == "alpha":
+			return []byte(`{"issues":[` + row("a-1", "open", 3) + `,` + row("a-2", "open", 0) + `]}`), nil
+		}
+		return []byte(`{"issues":[` + row("b-1", "closed", 0) + `]}`), nil
+	}, theme.Builtin, fakePeers{}, "vic")
+	rec := get(h, "GET", "/api/links", "")
+	body := rec.Body.String()
+	if rec.Code != 200 || strings.Count(body, `"type":`) != 2 { // the local a-1 -> a-2 edge is not a cross-repo link
+		t.Fatalf("%d %s", rec.Code, body)
+	}
+	if !strings.Contains(body, `"to":{"repo":"beta","id":"b-1","title":"T b-1","status":"closed","found":true}`) {
+		t.Errorf("resolved end missing: %s", body)
+	}
+	if !strings.Contains(body, `"to":{"repo":"gone","id":"g-1","title":"","status":"","found":false}`) {
+		t.Errorf("dangling end missing: %s", body)
+	}
+}
+
+// Every name in OpNames is a real op: parseOp must not call it unknown, and a
+// name missing from OpNames would leave an op that MCP cannot reach.
+func TestOpNamesMatchParseOp(t *testing.T) {
+	for _, n := range OpNames {
+		if _, err := parseOp(opJSON{Op: n}, "vic"); err != nil && strings.Contains(err.Error(), "unknown op") {
+			t.Errorf("%s is listed but unknown to parseOp", n)
+		}
+	}
+	if _, err := parseOp(opJSON{Op: "nope"}, "vic"); err == nil || !strings.Contains(err.Error(), "unknown op") {
+		t.Error("an unlisted op was not rejected as unknown")
+	}
+	src, err := os.ReadFile("ops.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(string(src), "\n") {
+		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "case \""); ok {
+			for _, n := range strings.Split(strings.ReplaceAll(rest, `"`, ""), ",") {
+				name := strings.TrimSuffix(strings.TrimSpace(n), ":")
+				if !slices.Contains(OpNames, name) {
+					t.Errorf("parseOp handles %q but OpNames lacks it", name)
+				}
+			}
 		}
 	}
 }

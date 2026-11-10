@@ -96,7 +96,7 @@ func (d DepType) String() string { return d.s }
 
 // Dep is an edge from the owning bead to On.
 type Dep struct {
-	On   ID
+	On   Ref
 	Type DepType
 }
 

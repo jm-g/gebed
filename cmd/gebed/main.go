@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"io/fs"
@@ -11,14 +12,24 @@ import (
 	"os/user"
 	"path/filepath"
 
+	"gebed/internal/mcp"
 	"gebed/internal/peer"
 	"gebed/internal/registry"
 	"gebed/internal/server"
+	"gebed/internal/skill"
 	"gebed/internal/store"
 	"gebed/internal/theme"
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "mcp" {
+		serveMCP(os.Args[2:])
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "skill" {
+		installSkill(os.Args[2:])
+		return
+	}
 	addr := flag.String("addr", "127.0.0.1:7878", "listen address (loopback only by default)")
 	claude := flag.String("claude", "", "Claude Code config dir (default ~/.claude)")
 	flag.Parse()
@@ -72,4 +83,44 @@ func main() {
 	}
 	log.Printf("gebed on http://%s", *addr)
 	log.Fatal(http.ListenAndServe(*addr, server.New(reg, store.Exec, themes, net, u.Username)))
+}
+
+// installSkill implements `gebed skill install [-to DIR]`.
+func installSkill(args []string) {
+	fs := flag.NewFlagSet("skill install", flag.ExitOnError)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatal(err)
+	}
+	to := fs.String("to", filepath.Join(home, ".claude", "skills"), "skills directory")
+	if len(args) == 0 || args[0] != "install" {
+		log.Fatal("usage: gebed skill install [-to DIR]")
+	}
+	if err := fs.Parse(args[1:]); err != nil {
+		log.Fatal(err)
+	}
+	p, err := skill.Install(*to)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("installed %s", p)
+}
+
+// serveMCP implements `gebed mcp [-url URL]`: an MCP server on stdio that
+// forwards every tool call to a running gebed. Stdout carries only protocol
+// messages; logs go to stderr.
+func serveMCP(args []string) {
+	fs := flag.NewFlagSet("mcp", flag.ExitOnError)
+	def := os.Getenv("GEBED_URL")
+	if def == "" {
+		def = "http://127.0.0.1:7878"
+	}
+	base := fs.String("url", def, "base URL of the running gebed (env GEBED_URL)")
+	if err := fs.Parse(args); err != nil {
+		log.Fatal(err)
+	}
+	s := &mcp.Server{Base: *base}
+	if err := s.Serve(context.Background(), os.Stdin, os.Stdout); err != nil {
+		log.Fatal(err)
+	}
 }
