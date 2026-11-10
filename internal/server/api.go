@@ -9,11 +9,13 @@ import (
 	"gebed/internal/model"
 	"gebed/internal/registry"
 	"gebed/internal/store"
+	"gebed/internal/theme"
 )
 
 type api struct {
-	reg *registry.Registry
-	run store.Runner
+	reg    *registry.Registry
+	run    store.Runner
+	themes func() []theme.Scheme
 }
 
 type repoJSON struct {
@@ -89,6 +91,10 @@ func (a *api) open(w http.ResponseWriter, r *http.Request) (*store.CLI, bool) {
 		return nil, false
 	}
 	return s, true
+}
+
+func (a *api) listThemes(w http.ResponseWriter, _ *http.Request) {
+	reply(w, http.StatusOK, a.themes())
 }
 
 func (a *api) listRepos(w http.ResponseWriter, _ *http.Request) {

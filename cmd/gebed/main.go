@@ -2,7 +2,9 @@
 package main
 
 import (
+	"errors"
 	"flag"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -11,6 +13,7 @@ import (
 	"gebed/internal/registry"
 	"gebed/internal/server"
 	"gebed/internal/store"
+	"gebed/internal/theme"
 )
 
 func main() {
@@ -29,6 +32,16 @@ func main() {
 			log.Fatal(err)
 		}
 	}
+	themes := func() []theme.Scheme {
+		all := theme.Builtin()
+		user, errs := theme.LoadDir(os.DirFS(filepath.Join(cfg, "gebed")), "themes")
+		for _, e := range errs {
+			if !errors.Is(e, fs.ErrNotExist) {
+				log.Printf("theme: %v", e)
+			}
+		}
+		return append(all, user...)
+	}
 	log.Printf("gebed on http://%s", *addr)
-	log.Fatal(http.ListenAndServe(*addr, server.New(reg, store.Exec)))
+	log.Fatal(http.ListenAndServe(*addr, server.New(reg, store.Exec, themes)))
 }

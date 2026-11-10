@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"gebed/internal/registry"
+	"gebed/internal/theme"
 )
 
 func newServer(t *testing.T, out string) (http.Handler, string) {
@@ -29,7 +30,7 @@ func newServer(t *testing.T, out string) (http.Handler, string) {
 		}
 		return []byte(out), nil
 	}
-	return New(reg, run), dir
+	return New(reg, run, theme.Builtin), dir
 }
 
 func get(h http.Handler, method, path, body string) *httptest.ResponseRecorder {
@@ -68,5 +69,13 @@ func TestBackendFailureIs502(t *testing.T) {
 	h, _ := newServer(t, "")
 	if rec := get(h, "GET", "/api/repos/proj/beads", ""); rec.Code != 502 {
 		t.Errorf("got %d", rec.Code)
+	}
+}
+
+func TestThemes(t *testing.T) {
+	h, _ := newServer(t, "")
+	rec := get(h, "GET", "/api/themes", "")
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"base0D":"#89b4fa"`) {
+		t.Errorf("%d %s", rec.Code, rec.Body)
 	}
 }

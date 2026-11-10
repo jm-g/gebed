@@ -19,6 +19,14 @@ li.current { background: var(--base02); }
 .beads li { display: flex; gap: 1em; }
 .id { color: var(--base0D); } .status { color: var(--base0A); width: 8em; }
 .prio { color: var(--base08); } .dim { color: var(--base04); } .error { color: var(--base08); }
+body { overflow: hidden; }
+.kanban { display: flex; gap: .5em; align-items: flex-start; }
+.col { min-width: 16em; background: var(--base01); padding: .4em; }
+.colhead { color: var(--base0A); margin-bottom: .4em; }
+.card { background: var(--base02); padding: .3em .4em; margin-bottom: .4em; }
+.card.current { outline: 1px solid var(--base0D); }
+.whichkey { position: fixed; left: 0; right: 0; bottom: 0; background: var(--base02); padding: .5em 1em; display: flex; flex-wrap: wrap; gap: 1.5em; }
+.wk .key { color: var(--base0D); }
 </style>
 </head>
 <body>
