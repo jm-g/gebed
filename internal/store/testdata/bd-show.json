@@ -1,0 +1,17 @@
+[
+  {
+    "id": "bd-rfo",
+    "title": "A task",
+    "status": "open",
+    "priority": 1,
+    "issue_type": "task",
+    "owner": "vborja@apache.org",
+    "created_at": "2026-11-10T22:47:41Z",
+    "created_by": "Victor Borja",
+    "updated_at": "2026-11-10T22:47:41Z",
+    "dependent_count": 0,
+    "dependency_count": 0,
+    "comment_count": 0,
+    "revision": "-8684478426730636772"
+  }
+]
