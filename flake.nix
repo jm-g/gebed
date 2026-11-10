@@ -17,6 +17,20 @@
       forAll = f: nixpkgs.lib.genAttrs systems (s: f s nixpkgs.legacyPackages.${s});
     in
     {
+      packages = forAll (
+        _: pkgs: {
+          default = pkgs.buildGoModule {
+            pname = "gebed";
+            version = "0.1.0";
+            src = ./.;
+            vendorHash = null; # no Go dependencies
+            subPackages = [ "cmd/gebed" ];
+            # internal/server/static/app.js is the committed Elm bundle (`just build` regenerates it)
+            meta.mainProgram = "gebed";
+          };
+        }
+      );
+
       devShells = forAll (
         system: pkgs: {
           default = pkgs.mkShell {
