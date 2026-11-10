@@ -3,6 +3,7 @@ package store
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"gebed/internal/model"
@@ -119,4 +120,31 @@ func DecodeShow(raw []byte) (model.Bead, error) {
 		return model.Bead{}, fmt.Errorf("show: want 1 issue, got %d", len(rows))
 	}
 	return rows[0].bead()
+}
+
+// DecodeComments decodes `comments <id> --json` of br and bd: an array. The id is
+// a number in br and a string in bd, so it is read raw and kept as text.
+func DecodeComments(raw []byte) ([]model.Comment, error) {
+	var rows []struct {
+		ID      json.RawMessage `json:"id"`
+		Author  string          `json:"author"`
+		Text    string          `json:"text"`
+		Created time.Time       `json:"created_at"`
+	}
+	if err := json.Unmarshal(raw, &rows); err != nil {
+		return nil, fmt.Errorf("comments: %w", err)
+	}
+	out := make([]model.Comment, 0, len(rows))
+	for _, r := range rows {
+		a, err := model.ParseAuthor(r.Author)
+		if err != nil {
+			return nil, err
+		}
+		b, err := model.ParseBody(r.Text)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, model.Comment{ID: strings.Trim(string(r.ID), `"`), Author: a, Body: b, Created: r.Created})
+	}
+	return out, nil
 }

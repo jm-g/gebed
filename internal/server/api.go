@@ -4,18 +4,29 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sync"
 	"time"
 
 	"gebed/internal/model"
+	"gebed/internal/peer"
 	"gebed/internal/registry"
 	"gebed/internal/store"
 	"gebed/internal/theme"
 )
 
+// Peers lists live Claude sessions and sends them a message.
+type Peers interface {
+	List() ([]peer.Session, error)
+	Send(s peer.Session, body string) error
+}
+
 type api struct {
 	reg    *registry.Registry
 	run    store.Runner
 	themes func() []theme.Scheme
+	peers  Peers
+	user   string // author of comments written in the UI
+	write  sync.Mutex
 }
 
 type repoJSON struct {

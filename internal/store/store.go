@@ -102,3 +102,12 @@ func (c *CLI) Get(ctx context.Context, id model.ID) (model.Bead, error) {
 	}
 	return DecodeShow(raw)
 }
+
+// Comments returns a bead's discussion, oldest first as the CLI lists it.
+func (c *CLI) Comments(ctx context.Context, id model.ID) ([]model.Comment, error) {
+	raw, err := c.Run(ctx, c.Dir, c.Backend.bin, "comments", id.String(), "--json")
+	if err != nil {
+		return nil, err
+	}
+	return DecodeComments(raw)
+}

@@ -75,3 +75,18 @@ func TestRejects(t *testing.T) {
 		t.Error("garbage accepted")
 	}
 }
+
+func TestComments(t *testing.T) {
+	for name, wantID := range map[string]string{"br-comments.json": "1", "bd-comments.json": "478da3b3-56bf-558b-9d75-fcff7e2b3b25"} {
+		cs, err := DecodeComments(fixture(t, name))
+		if err != nil || len(cs) != 1 || cs[0].ID != wantID || cs[0].Body.String() != "hello @impl" {
+			t.Fatalf("%s: %v %+v", name, err, cs)
+		}
+		if m := cs[0].Body.Mentions(); len(m) != 1 || m[0] != "impl" {
+			t.Errorf("%s: mentions %q", name, m)
+		}
+	}
+	if _, err := DecodeComments([]byte(`[{"id":1,"author":"","text":"x"}]`)); err == nil {
+		t.Error("empty author accepted")
+	}
+}

@@ -3,9 +3,7 @@
 package model
 
 import (
-	"errors"
 	"fmt"
-	"strings"
 	"time"
 )
 
@@ -13,7 +11,7 @@ import (
 type ID struct{ s string }
 
 func ParseID(s string) (ID, error) {
-	if s == "" || strings.ContainsAny(s, " \t\r\n") {
+	if !plain(s) {
 		return ID{}, fmt.Errorf("invalid bead id %q", s)
 	}
 	return ID{s}, nil
@@ -37,8 +35,8 @@ var (
 )
 
 func ParseStatus(s string) (Status, error) {
-	if s == "" {
-		return Status{}, errors.New("empty status")
+	if !plain(s) {
+		return Status{}, fmt.Errorf("invalid status %q", s)
 	}
 	return Status{s}, nil
 }
@@ -59,8 +57,8 @@ var (
 )
 
 func ParseKind(s string) (Kind, error) {
-	if s == "" {
-		return Kind{}, errors.New("empty issue type")
+	if !plain(s) {
+		return Kind{}, fmt.Errorf("invalid issue type %q", s)
 	}
 	return Kind{s}, nil
 }
@@ -88,8 +86,8 @@ var (
 )
 
 func ParseDepType(s string) (DepType, error) {
-	if s == "" {
-		return DepType{}, errors.New("empty dependency type")
+	if !plain(s) {
+		return DepType{}, fmt.Errorf("invalid dependency type %q", s)
 	}
 	return DepType{s}, nil
 }
