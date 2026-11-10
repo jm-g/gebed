@@ -1,10 +1,16 @@
 module Types exposing
     ( Bead
+    , Comment
+    , Delivery
     , Dep
     , Repo
+    , Session
     , Status(..)
     , beadDecoder
+    , commentDecoder
+    , deliveryDecoder
     , repoDecoder
+    , sessionDecoder
     , statusLabel
     )
 
@@ -147,3 +153,52 @@ beadDecoder =
         |> andMap (D.field "depCount" D.int)
         |> andMap (D.field "dependentCount" D.int)
         |> andMap (D.field "deps" (D.list depDecoder))
+
+
+type alias Comment =
+    { id : String
+    , author : String
+    , text : String
+    , created : String
+    }
+
+
+type alias Session =
+    { nick : String
+    , cwd : String
+    , status : String
+    }
+
+
+{-| Result of sending a comment's mentions to live sessions.
+-}
+type alias Delivery =
+    { name : String
+    , delivered : Bool
+    , error : String
+    }
+
+
+commentDecoder : Decoder Comment
+commentDecoder =
+    D.map4 Comment
+        (D.field "id" D.string)
+        (D.field "author" D.string)
+        (D.field "text" D.string)
+        (D.field "created" D.string)
+
+
+sessionDecoder : Decoder Session
+sessionDecoder =
+    D.map3 Session
+        (D.field "nick" D.string)
+        (D.field "cwd" D.string)
+        (D.field "status" D.string)
+
+
+deliveryDecoder : Decoder Delivery
+deliveryDecoder =
+    D.map3 Delivery
+        (D.field "name" D.string)
+        (D.field "delivered" D.bool)
+        (D.oneOf [ D.field "error" D.string, D.succeed "" ])

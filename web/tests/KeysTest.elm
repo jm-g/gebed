@@ -1,7 +1,7 @@
 module KeysTest exposing (suite)
 
 import Expect
-import Keys exposing (Action(..), Outcome(..), View(..), hints, press)
+import Keys exposing (Action(..), ComposeKind(..), Outcome(..), View(..), hints, press)
 import Test exposing (Test, describe, test)
 
 
@@ -23,8 +23,18 @@ suite =
             \_ -> press [ " " ] "Escape" |> Expect.equal Cancel
         , test "key after a finished sequence path cancels" <|
             \_ -> press [ "j" ] "k" |> Expect.equal Cancel
+        , test "edit status sequence" <|
+            \_ ->
+                press [ " ", "e", "s" ] "p" |> Expect.equal (Run (SetStatus "in_progress"))
+        , test "priority digits" <|
+            \_ ->
+                press [ " ", "e", "p" ] "0" |> Expect.equal (Run (SetPriority 0))
+        , test "comment and ask open the composer" <|
+            \_ ->
+                [ press [] "c", press [] "a", press [] "n" ]
+                    |> Expect.equal [ Run (Compose Discuss), Run (Compose Ask), Run (Compose NewBead) ]
         , test "leader hints list the groups" <|
             \_ ->
                 hints [ " " ]
-                    |> Expect.equal [ ( "v", "view …" ), ( "t", "theme …" ), ( "r", "reload" ) ]
+                    |> Expect.equal [ ( "v", "view …" ), ( "e", "edit …" ), ( "t", "theme …" ), ( "r", "reload" ) ]
         ]

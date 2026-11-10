@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"gebed/internal/peer"
 	"gebed/internal/registry"
@@ -166,5 +167,42 @@ func TestSessions(t *testing.T) {
 	h, _ := newServer(t, "")
 	if rec := get(h, "GET", "/api/sessions", ""); !strings.Contains(rec.Body.String(), `"nick":"impl"`) {
 		t.Errorf("%s", rec.Body)
+	}
+}
+
+func TestFingerprint(t *testing.T) {
+	d := t.TempDir()
+	b := filepath.Join(d, ".beads")
+	if err := os.MkdirAll(filepath.Join(b, "embeddeddolt", ".dolt"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(p, s string) {
+		if err := os.WriteFile(filepath.Join(b, p), []byte(s), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("issues.jsonl", "a")
+	write("embeddeddolt/.dolt/journal", "12345")
+	v0 := fingerprint(d)
+	write("last-touched", "x") // quiet: reads touch it
+	write("beads.db-wal", "x")
+	if fingerprint(d) != v0 {
+		t.Error("quiet files changed the fingerprint")
+	}
+	later := time.Now().Add(time.Hour)
+	if err := os.Chtimes(filepath.Join(b, "embeddeddolt/.dolt/journal"), later, later); err != nil {
+		t.Fatal(err)
+	}
+	if fingerprint(d) != v0 {
+		t.Error("dolt mtime changed the fingerprint")
+	}
+	write("embeddeddolt/.dolt/journal", "123456") // a write grows the journal
+	if fingerprint(d) == v0 {
+		t.Error("dolt growth not seen")
+	}
+	v1 := fingerprint(d)
+	write("issues.jsonl", "b")
+	if fingerprint(d) == v1 {
+		t.Error("jsonl change not seen")
 	}
 }

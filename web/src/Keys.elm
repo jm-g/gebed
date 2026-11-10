@@ -1,5 +1,6 @@
 module Keys exposing
     ( Action(..)
+    , ComposeKind(..)
     , Outcome(..)
     , View(..)
     , hints
@@ -15,6 +16,13 @@ type View
     | KanbanView
 
 
+type ComposeKind
+    = NewBead
+    | Discuss
+    | Ask
+    | Rename
+
+
 type Action
     = Down
     | Up
@@ -24,6 +32,11 @@ type Action
     | NextTheme
     | Reload
     | Help
+    | OpenDetail
+    | Compose ComposeKind
+    | SetStatus String
+    | SetPriority Int
+    | Reopen
 
 
 type Entry
@@ -44,35 +57,53 @@ type Outcome
     | Cancel
 
 
+leaf : String -> String -> Action -> Binding
+leaf key label action =
+    { key = key, label = label, entry = Do action }
+
+
+group : String -> String -> List Binding -> Binding
+group key label bindings =
+    { key = key, label = label, entry = Prefix bindings }
+
+
 root : List Binding
 root =
-    [ { key = "j", label = "down", entry = Do Down }
-    , { key = "k", label = "up", entry = Do Up }
-    , { key = "G", label = "bottom", entry = Do Bottom }
-    , { key = "?", label = "help", entry = Do Help }
-    , { key = "g"
-      , label = "go"
-      , entry = Prefix [ { key = "g", label = "top", entry = Do Top } ]
-      }
-    , { key = " "
-      , label = "leader"
-      , entry =
-            Prefix
-                [ { key = "v"
-                  , label = "view"
-                  , entry =
-                        Prefix
-                            [ { key = "l", label = "list", entry = Do (Show ListView) }
-                            , { key = "k", label = "kanban", entry = Do (Show KanbanView) }
-                            ]
-                  }
-                , { key = "t"
-                  , label = "theme"
-                  , entry = Prefix [ { key = "n", label = "next theme", entry = Do NextTheme } ]
-                  }
-                , { key = "r", label = "reload", entry = Do Reload }
+    [ leaf "j" "down" Down
+    , leaf "k" "up" Up
+    , leaf "G" "bottom" Bottom
+    , leaf "Enter" "open discussion" OpenDetail
+    , leaf "c" "comment" (Compose Discuss)
+    , leaf "a" "ask implementer" (Compose Ask)
+    , leaf "n" "new bead" (Compose NewBead)
+    , leaf "?" "help" Help
+    , group "g" "go" [ leaf "g" "top" Top ]
+    , group " "
+        "leader"
+        [ group "v"
+            "view"
+            [ leaf "l" "list" (Show ListView)
+            , leaf "k" "kanban" (Show KanbanView)
+            ]
+        , group "e"
+            "edit"
+            [ group "s"
+                "status"
+                [ leaf "o" "open" (SetStatus "open")
+                , leaf "p" "in progress" (SetStatus "in_progress")
+                , leaf "b" "blocked" (SetStatus "blocked")
+                , leaf "d" "deferred" (SetStatus "deferred")
+                , leaf "c" "closed" (SetStatus "closed")
                 ]
-      }
+            , group "p"
+                "priority"
+                (List.map (\n -> leaf (String.fromInt n) ("P" ++ String.fromInt n) (SetPriority n)) [ 0, 1, 2, 3, 4 ])
+            , leaf "o" "reopen" Reopen
+            , leaf "t" "rename title" (Compose Rename)
+            ]
+        , group "t" "theme" [ leaf "n" "next theme" NextTheme ]
+        , leaf "r" "reload" Reload
+        ]
     ]
 
 
