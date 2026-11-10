@@ -1,6 +1,26 @@
 <!doctype html>
 <html>
-<head><meta charset="utf-8"><title>gebed</title></head>
+<head>
+<meta charset="utf-8">
+<title>gebed</title>
+<style>
+:root {
+  --base00: #1e1e2e; --base01: #181825; --base02: #313244; --base03: #45475a;
+  --base04: #585b70; --base05: #cdd6f4; --base08: #f38ba8; --base0A: #f9e2af;
+  --base0B: #a6e3a1; --base0D: #89b4fa;
+}
+body { margin: 0; background: var(--base00); color: var(--base05); font: 14px monospace; }
+.app { display: flex; height: 100vh; }
+.sidebar { width: 14em; background: var(--base01); padding: .5em; overflow: auto; }
+.main { flex: 1; padding: .5em; overflow: auto; }
+ul { list-style: none; margin: 0; padding: 0; }
+li { padding: .15em .4em; cursor: default; }
+li.current { background: var(--base02); }
+.beads li { display: flex; gap: 1em; }
+.id { color: var(--base0D); } .status { color: var(--base0A); width: 8em; }
+.prio { color: var(--base08); } .dim { color: var(--base04); } .error { color: var(--base08); }
+</style>
+</head>
 <body>
 <div id="app"></div>
 <script src="app.js"></script>

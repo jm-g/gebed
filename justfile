@@ -14,7 +14,7 @@ test:
 
 lint:
     golangci-lint run ./...
-    cd web && elm-review
+    cd web && elm-format --validate src
 
 fmt:
     gofmt -w .

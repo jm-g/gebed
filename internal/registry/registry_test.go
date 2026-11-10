@@ -36,7 +36,9 @@ func TestAddRejects(t *testing.T) {
 	if _, err := r.Add(t.TempDir()); err == nil {
 		t.Error("dir without .beads accepted")
 	}
-	r.Add(beadsDir(t, "same"))
+	if _, err := r.Add(beadsDir(t, "same")); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := r.Add(beadsDir(t, "same")); err == nil {
 		t.Error("duplicate name from other dir accepted")
 	}
