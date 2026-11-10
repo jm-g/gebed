@@ -26,11 +26,12 @@ func TestArgv(t *testing.T) {
 			[]string{"update", "x-1", "--title=-rf everything", "--json"}},
 		"create": {Create{dash, model.Bug, must(model.ParsePriority(0))},
 			[]string{"create", "--title=-rf everything", "--type=bug", "--priority=0", "--json"}},
-		"status":     {SetStatus{id, model.InProgress}, []string{"update", "x-1", "--status=in_progress", "--json"}},
-		"label":      {AddLabel{id, must(model.ParseLabel("ui"))}, []string{"label", "add", "x-1", "ui", "--json"}},
-		"close":      {Close{id, "done"}, []string{"close", "x-1", "--json", "--reason=done"}},
-		"close bare": {Close{id, ""}, []string{"close", "x-1", "--json"}},
-		"dep":        {AddDep{id, must(model.ParseID("y-2")), model.Blocks}, []string{"dep", "add", "x-1", "y-2", "--type=blocks", "--json"}},
+		"status":         {SetStatus{id, model.InProgress}, []string{"update", "x-1", "--status=in_progress", "--json"}},
+		"label":          {AddLabel{id, must(model.ParseLabel("ui"))}, []string{"label", "add", "x-1", "ui", "--json"}},
+		"close":          {Close{id, "done"}, []string{"close", "x-1", "--json", "--reason=done"}},
+		"close bare":     {Close{id, ""}, []string{"close", "x-1", "--json"}},
+		"dep":            {AddDep{id, must(model.ParseRef("y-2")), model.Blocks}, []string{"dep", "add", "x-1", "y-2", "--type=blocks", "--json"}},
+		"cross-repo dep": {AddDep{id, must(model.ParseRef("external:bd:bd-rfo")), model.Blocks}, []string{"dep", "add", "x-1", "external:bd:bd-rfo", "--type=blocks", "--json"}},
 	} {
 		if got := tc.op.argv(); !slices.Equal(got, tc.want) {
 			t.Errorf("%s: got %q want %q", name, got, tc.want)

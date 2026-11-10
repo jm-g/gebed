@@ -20,6 +20,9 @@ bead id status prio =
     , depCount = 0
     , dependentCount = 0
     , deps = []
+    , createdMs = 0
+    , updatedMs = 0
+    , closedMs = Nothing
     }
 
 

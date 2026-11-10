@@ -60,6 +60,10 @@ type beadJSON struct {
 	DepCount       int        `json:"depCount"`
 	DependentCount int        `json:"dependentCount"`
 	Deps           []depJSON  `json:"deps"`
+	// Unix milliseconds, for the waterfall; ClosedMs is nil while the bead is open.
+	CreatedMs int64  `json:"createdMs"`
+	UpdatedMs int64  `json:"updatedMs"`
+	ClosedMs  *int64 `json:"closedMs"`
 }
 
 func toJSON(b model.Bead) beadJSON {
@@ -71,12 +75,18 @@ func toJSON(b model.Bead) beadJSON {
 	if labels == nil {
 		labels = []string{}
 	}
+	var closedMs *int64
+	if b.Closed != nil {
+		m := b.Closed.UnixMilli()
+		closedMs = &m
+	}
 	return beadJSON{
 		ID: b.ID.String(), Title: b.Title, Description: b.Description, Design: b.Design,
 		Acceptance: b.Acceptance, Notes: b.Notes, Status: b.Status.String(), Kind: b.Kind.String(),
 		Priority: b.Priority.Int(), Assignee: b.Assignee, Owner: b.Owner, Labels: labels,
 		Created: b.Created, Updated: b.Updated, Closed: b.Closed, CloseReason: b.CloseReason,
 		DepCount: b.DepCount, DependentCount: b.DependentCount, Deps: deps,
+		CreatedMs: b.Created.UnixMilli(), UpdatedMs: b.Updated.UnixMilli(), ClosedMs: closedMs,
 	}
 }
 

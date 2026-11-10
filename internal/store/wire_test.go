@@ -90,3 +90,17 @@ func TestComments(t *testing.T) {
 		t.Error("empty author accepted")
 	}
 }
+
+func TestEdges(t *testing.T) {
+	es, err := DecodeEdges(fixture(t, "br-edges.json"))
+	if err != nil || len(es) != 1 || es[0].To.Project != "bd" || es[0].To.ID.String() != "bd-rfo" || es[0].Type.String() != "related" {
+		t.Fatalf("br: %v %+v", err, es)
+	}
+	es, err = DecodeEdges(fixture(t, "bd-edges.json"))
+	if err != nil || len(es) != 2 || es[0].To.Project != "br" || es[1].To.Project != "" {
+		t.Fatalf("bd: %v %+v", err, es)
+	}
+	if _, err := DecodeEdges([]byte(`[{"issue_id":"a","depends_on_id":"external:x","type":"blocks"}]`)); err == nil {
+		t.Error("malformed external ref accepted")
+	}
+}

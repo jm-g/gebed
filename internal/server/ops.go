@@ -94,7 +94,7 @@ func parseOp(o opJSON, user string) (store.Op, error) {
 		return store.AddComment{ID: id, Author: au, Body: b}, nil
 	case "addDep":
 		from, err1 := model.ParseID(o.From)
-		on, err2 := model.ParseID(o.On)
+		on, err2 := model.ParseRef(o.On)
 		t, err3 := model.ParseDepType(o.Type)
 		if err := firstErr(err1, err2, err3); err != nil {
 			return nil, err

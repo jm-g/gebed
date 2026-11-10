@@ -26,6 +26,10 @@ suite =
         , test "edit status sequence" <|
             \_ ->
                 press [ " ", "e", "s" ] "p" |> Expect.equal (Run (SetStatus "in_progress"))
+        , test "views and link keys" <|
+            \_ ->
+                [ press [ " ", "v" ] "g", press [ " ", "v" ] "w", press [ " ", "e" ] "l", press [ " ", "e" ] "+" ]
+                    |> Expect.equal [ Run (Show GraphView), Run (Show WaterfallView), Run (Compose Link), Run (Compose AddLabel) ]
         , test "priority digits" <|
             \_ ->
                 press [ " ", "e", "p" ] "0" |> Expect.equal (Run (SetPriority 0))

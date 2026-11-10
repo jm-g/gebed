@@ -14,6 +14,8 @@ module Keys exposing
 type View
     = ListView
     | KanbanView
+    | GraphView
+    | WaterfallView
 
 
 type ComposeKind
@@ -21,6 +23,9 @@ type ComposeKind
     | Discuss
     | Ask
     | Rename
+    | Link
+    | AddLabel
+    | RemoveLabel
 
 
 type Action
@@ -84,6 +89,8 @@ root =
             "view"
             [ leaf "l" "list" (Show ListView)
             , leaf "k" "kanban" (Show KanbanView)
+            , leaf "g" "dependency graph" (Show GraphView)
+            , leaf "w" "waterfall" (Show WaterfallView)
             ]
         , group "e"
             "edit"
@@ -100,6 +107,9 @@ root =
                 (List.map (\n -> leaf (String.fromInt n) ("P" ++ String.fromInt n) (SetPriority n)) [ 0, 1, 2, 3, 4 ])
             , leaf "o" "reopen" Reopen
             , leaf "t" "rename title" (Compose Rename)
+            , leaf "l" "link to bead (id or repo:id)" (Compose Link)
+            , leaf "+" "add label" (Compose AddLabel)
+            , leaf "-" "remove label" (Compose RemoveLabel)
             ]
         , group "t" "theme" [ leaf "n" "next theme" NextTheme ]
         , leaf "r" "reload" Reload

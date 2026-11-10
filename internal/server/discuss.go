@@ -98,3 +98,33 @@ func (a *api) notify(repo registry.Repo, b store.Backend, id model.ID, body mode
 	}
 	return out
 }
+
+type edgeJSON struct {
+	From string `json:"from"`
+	// ToRepo is empty for a bead of the same repo, else the name of the other repo.
+	ToRepo string `json:"toRepo"`
+	To     string `json:"to"`
+	Type   string `json:"type"`
+}
+
+func (a *api) listEdges(w http.ResponseWriter, r *http.Request) {
+	s, ok := a.open(w, r)
+	if !ok {
+		return
+	}
+	bs, err := s.List(r.Context())
+	if err != nil {
+		fail(w, http.StatusBadGateway, err)
+		return
+	}
+	es, err := s.Edges(r.Context(), bs)
+	if err != nil {
+		fail(w, http.StatusBadGateway, err)
+		return
+	}
+	out := make([]edgeJSON, 0, len(es))
+	for _, e := range es {
+		out = append(out, edgeJSON{e.From.String(), e.To.Project, e.To.ID.String(), e.Type.String()})
+	}
+	reply(w, http.StatusOK, out)
+}

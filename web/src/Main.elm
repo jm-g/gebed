@@ -11,10 +11,13 @@ import Http
 import Json.Decode as D
 import Json.Encode as E
 import Keys exposing (Action(..), ComposeKind(..), Outcome(..), View(..))
+import Layout
+import Svg
+import Svg.Attributes as SA
 import Task
 import Theme
 import Time
-import Types exposing (Bead, Comment, Delivery, Repo, Session, statusLabel)
+import Types exposing (Bead, Comment, Delivery, Edge, Repo, Session, statusLabel)
 
 
 type Loaded a
@@ -52,6 +55,7 @@ type alias Model =
     , sessions : List Session
     , version : Maybe String
     , flash : Maybe String
+    , edges : List Edge
     }
 
 
@@ -68,6 +72,7 @@ type Msg
     | GotBead String (Result Http.Error Bead)
     | GotComments String (Result Http.Error (List Comment))
     | GotSessions (Result Http.Error (List Session))
+    | GotEdges String (Result Http.Error (List Edge))
     | GotVersion String (Result Http.Error String)
     | OpDone (Result String OpResult)
     | Pick String
@@ -99,6 +104,7 @@ main =
                   , sessions = []
                   , version = Nothing
                   , flash = Nothing
+                  , edges = []
                   }
                 , Cmd.batch [ getRepos, getThemes ]
                 )
@@ -204,6 +210,14 @@ getComments name id =
 getSessions : Cmd Msg
 getSessions =
     Http.get { url = "/api/sessions", expect = Http.expectJson GotSessions (D.list Types.sessionDecoder) }
+
+
+getEdges : String -> Cmd Msg
+getEdges name =
+    Http.get
+        { url = repoUrl name "/edges"
+        , expect = Http.expectJson (GotEdges name) (D.list Types.edgeDecoder)
+        }
 
 
 getVersion : String -> Cmd Msg
@@ -317,6 +331,12 @@ refresh model =
                             Nothing ->
                                 []
                        )
+                    ++ (if model.view == GraphView then
+                            [ getEdges name ]
+
+                        else
+                            []
+                       )
                 )
 
 
@@ -353,6 +373,16 @@ update msg model =
 
         GotSessions (Err _) ->
             ( { model | sessions = [] }, Cmd.none )
+
+        GotEdges name (Ok es) ->
+            if model.current == Just name then
+                ( { model | edges = es }, Cmd.none )
+
+            else
+                ( model, Cmd.none )
+
+        GotEdges _ (Err e) ->
+            ( { model | flash = Just ("edges: " ++ httpError e) }, Cmd.none )
 
         Pick name ->
             ( { model | current = Just name, beads = Loading, sel = 0, detail = Nothing, version = Nothing }
@@ -524,8 +554,33 @@ composeFields c =
         Rename ->
             [ ( "op", E.string "setTitle" ), ( "id", E.string c.target ), ( "title", E.string c.text ) ]
 
+        Link ->
+            [ ( "op", E.string "addDep" ), ( "from", E.string c.target ), ( "on", E.string (linkRef c.text) ), ( "type", E.string "blocks" ) ]
+
+        AddLabel ->
+            [ ( "op", E.string "addLabel" ), ( "id", E.string c.target ), ( "label", E.string (String.trim c.text) ) ]
+
+        RemoveLabel ->
+            [ ( "op", E.string "removeLabel" ), ( "id", E.string c.target ), ( "label", E.string (String.trim c.text) ) ]
+
         _ ->
             [ ( "op", E.string "addComment" ), ( "id", E.string c.target ), ( "text", E.string c.text ) ]
+
+
+{-| What the user types for a link: `id` for this repo, `repo:id` for another
+repo. br and bd store the second as `external:repo:id`.
+-}
+linkRef : String -> String
+linkRef raw =
+    let
+        s =
+            String.trim raw
+    in
+    if String.contains ":" s && not (String.startsWith "external:" s) then
+        "external:" ++ s
+
+    else
+        s
 
 
 run : Action -> Model -> ( Model, Cmd Msg )
@@ -544,7 +599,14 @@ run action model =
             ( clamp { model | sel = List.length (ordered model) - 1 }, Cmd.none )
 
         Show v ->
-            ( { model | view = v }, Cmd.none )
+            ( { model | view = v }
+            , case ( v, model.current ) of
+                ( GraphView, Just name ) ->
+                    getEdges name
+
+                _ ->
+                    Cmd.none
+            )
 
         NextTheme ->
             ( { model | themeIdx = modBy (max 1 (List.length model.themes)) (model.themeIdx + 1) }, Cmd.none )
@@ -727,6 +789,12 @@ viewBody model beads =
         KanbanView ->
             [ div [ class "kanban" ] (List.map (column sel) (Board.columns beads)) ]
 
+        GraphView ->
+            [ viewGraph sel beads model.edges ]
+
+        WaterfallView ->
+            [ viewWaterfall sel beads ]
+
 
 beadRow : Maybe String -> Bead -> Html Msg
 beadRow sel b =
@@ -853,6 +921,15 @@ viewComposer model c =
 
                 Rename ->
                     "rename " ++ c.target
+
+                Link ->
+                    c.target ++ " depends on … (bead id, or repo:id for another repo)"
+
+                AddLabel ->
+                    "add a label to " ++ c.target
+
+                RemoveLabel ->
+                    "remove a label from " ++ c.target
     in
     div [ class "composer" ]
         [ div [ class "dim" ] [ text (label ++ "   (Ctrl+Enter send, Esc cancel)") ]
@@ -873,3 +950,144 @@ viewComposer model c =
                     :: List.map (\s -> span [ class "chip", onClick (Mention s.nick) ] [ text ("@" ++ s.nick) ]) model.sessions
                 )
         ]
+
+
+
+-- GRAPH AND WATERFALL
+
+
+nodeW : Int
+nodeW =
+    210
+
+
+nodeH : Int
+nodeH =
+    44
+
+
+viewGraph : Maybe String -> List Bead -> List Edge -> Html Msg
+viewGraph sel beads edges =
+    let
+        nodes =
+            Layout.layers beads edges
+
+        x n =
+            24 + n.layer * (nodeW + 50)
+
+        y n =
+            24 + n.row * (nodeH + 16)
+
+        at id =
+            nodes |> List.filter (\n -> n.bead.id == id) |> List.head
+
+        width =
+            24 + (1 + (List.map .layer nodes |> List.maximum |> Maybe.withDefault 0)) * (nodeW + 50)
+
+        height =
+            48 + (1 + (List.map .row nodes |> List.maximum |> Maybe.withDefault 0)) * (nodeH + 16)
+
+        link e =
+            case ( e.toRepo, at e.to, at e.from ) of
+                ( "", Just target_, Just from ) ->
+                    let
+                        x1 =
+                            x target_ + nodeW
+
+                        y1 =
+                            y target_ + nodeH // 2
+
+                        x2 =
+                            x from
+
+                        y2 =
+                            y from + nodeH // 2
+
+                        mid =
+                            String.fromInt ((x1 + x2) // 2)
+                    in
+                    [ Svg.path
+                        [ SA.d ("M" ++ String.fromInt x1 ++ "," ++ String.fromInt y1 ++ " C" ++ mid ++ "," ++ String.fromInt y1 ++ " " ++ mid ++ "," ++ String.fromInt y2 ++ " " ++ String.fromInt x2 ++ "," ++ String.fromInt y2)
+                        , SA.class
+                            (if e.kind == "blocks" || e.kind == "parent-child" then
+                                "edge"
+
+                             else
+                                "edge soft"
+                            )
+                        ]
+                        []
+                    ]
+
+                _ ->
+                    []
+
+        external n =
+            edges
+                |> List.filter (\e -> e.from == n.bead.id && e.toRepo /= "")
+                |> List.map (\e -> "→ " ++ e.toRepo ++ ":" ++ e.to)
+                |> String.join "  "
+
+        node n =
+            Svg.g []
+                [ Svg.rect
+                    [ SA.x (String.fromInt (x n))
+                    , SA.y (String.fromInt (y n))
+                    , SA.width (String.fromInt nodeW)
+                    , SA.height (String.fromInt nodeH)
+                    , SA.class
+                        (if sel == Just n.bead.id then
+                            "gnode current"
+
+                         else
+                            "gnode"
+                        )
+                    ]
+                    []
+                , Svg.text_ [ SA.x (String.fromInt (x n + 8)), SA.y (String.fromInt (y n + 17)), SA.class "gid" ]
+                    [ Svg.text (n.bead.id ++ "  " ++ statusLabel n.bead.status) ]
+                , Svg.text_ [ SA.x (String.fromInt (x n + 8)), SA.y (String.fromInt (y n + 33)), SA.class "gtitle" ]
+                    [ Svg.text (String.left 28 n.bead.title) ]
+                , Svg.text_ [ SA.x (String.fromInt (x n + 8)), SA.y (String.fromInt (y n + nodeH + 11)), SA.class "gext" ]
+                    [ Svg.text (external n) ]
+                ]
+    in
+    Svg.svg [ SA.width (String.fromInt width), SA.height (String.fromInt height), SA.class "graph" ]
+        (List.concatMap link edges ++ List.map node nodes)
+
+
+viewWaterfall : Maybe String -> List Bead -> Html Msg
+viewWaterfall sel beads =
+    div [ class "waterfall" ]
+        (List.map
+            (\b ->
+                div [ classList [ ( "wrow", True ), ( "current", sel == Just b.bead.id ) ] ]
+                    [ span [ class "wlabel" ] [ span [ class "id" ] [ text b.bead.id ], text (" " ++ String.left 30 b.bead.title) ]
+                    , div [ class "wtrack" ]
+                        [ div
+                            [ class ("wbar " ++ statusClass b.bead)
+                            , A.style "left" (String.fromFloat b.startPct ++ "%")
+                            , A.style "width" (String.fromFloat b.widthPct ++ "%")
+                            ]
+                            []
+                        ]
+                    ]
+            )
+            (Layout.bars beads)
+        )
+
+
+statusClass : Bead -> String
+statusClass b =
+    case b.status of
+        Types.Closed ->
+            "done"
+
+        Types.InProgress ->
+            "doing"
+
+        Types.Blocked ->
+            "blocked"
+
+        _ ->
+            "todo"

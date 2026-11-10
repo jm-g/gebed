@@ -88,3 +88,45 @@ func TestCLI(t *testing.T) {
 		t.Fatalf("get: %v %v", b, err)
 	}
 }
+
+func TestEdgesCalls(t *testing.T) {
+	mk := func(id string, deps int) model.Bead {
+		i, _ := model.ParseID(id)
+		return model.Bead{ID: i, DepCount: deps}
+	}
+	var calls [][]string
+	run := func(_ context.Context, _, bin string, args ...string) ([]byte, error) {
+		calls = append(calls, append([]string{bin}, args...))
+		return []byte(`[]`), nil
+	}
+	beads := []model.Bead{mk("a-1", 1), mk("a-2", 0), mk("a-3", 2)}
+
+	calls = nil
+	if _, err := (&CLI{Backend: Br, Run: run}).Edges(context.Background(), beads); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 2 || calls[0][3] != "a-1" || calls[1][3] != "a-3" { // one call per bead with deps, none for a-2
+		t.Errorf("br calls %q", calls)
+	}
+
+	calls = nil
+	if _, err := (&CLI{Backend: Bd, Run: run}).Edges(context.Background(), beads); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 1 || len(calls[0]) != 6 || calls[0][3] != "a-1" || calls[0][4] != "a-3" {
+		t.Errorf("bd one batch call: %q", calls)
+	}
+
+	calls = nil
+	if _, err := (&CLI{Backend: Bd, Run: run}).Edges(context.Background(), beads[:1]); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != 1 || calls[0][3] != "a-1" || calls[0][4] != "a-1" { // a lone id is doubled to get raw records
+		t.Errorf("bd lone id: %q", calls)
+	}
+
+	calls = nil
+	if es, _ := (&CLI{Backend: Br, Run: run}).Edges(context.Background(), beads[1:2]); es != nil || len(calls) != 0 {
+		t.Errorf("no deps must run nothing: %q", calls)
+	}
+}

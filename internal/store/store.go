@@ -111,3 +111,42 @@ func (c *CLI) Comments(ctx context.Context, id model.ID) ([]model.Comment, error
 	}
 	return DecodeComments(raw)
 }
+
+// Edges returns every dependency edge of the beads that have any (DepCount > 0),
+// cross-repo links included. br lists one bead per call; bd lists many in one
+// call but gives raw edge records only for two or more ids, so a lone id is
+// passed twice (the output is deduplicated).
+func (c *CLI) Edges(ctx context.Context, beads []model.Bead) ([]model.Edge, error) {
+	var ids []string
+	for _, b := range beads {
+		if b.DepCount > 0 {
+			ids = append(ids, b.ID.String())
+		}
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	if c.Backend.bin == "bd" {
+		if len(ids) == 1 {
+			ids = append(ids, ids[0])
+		}
+		raw, err := c.Run(ctx, c.Dir, "bd", append([]string{"dep", "list"}, append(ids, "--json")...)...)
+		if err != nil {
+			return nil, err
+		}
+		return DecodeEdges(raw)
+	}
+	var out []model.Edge
+	for _, id := range ids {
+		raw, err := c.Run(ctx, c.Dir, "br", "dep", "list", id, "--json")
+		if err != nil {
+			return nil, err
+		}
+		es, err := DecodeEdges(raw)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, es...)
+	}
+	return out, nil
+}

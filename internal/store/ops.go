@@ -57,10 +57,11 @@ type Close struct {
 
 type Reopen struct{ ID model.ID }
 
-// AddDep makes From depend on On.
+// AddDep makes From depend on On, a bead of this repo or of another registered repo.
 type AddDep struct {
-	From, On model.ID
-	Type     model.DepType
+	From model.ID
+	On   model.Ref
+	Type model.DepType
 }
 
 func (o Create) argv() []string {

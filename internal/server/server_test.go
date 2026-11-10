@@ -56,7 +56,7 @@ func TestAPI(t *testing.T) {
 		t.Errorf("repos: %s", rec.Body)
 	}
 	rec := get(h, "GET", "/api/repos/proj/beads", "")
-	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"id":"x-1"`) || !strings.Contains(rec.Body.String(), `"labels":[]`) {
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"id":"x-1"`) || !strings.Contains(rec.Body.String(), `"labels":[]`) || !strings.Contains(rec.Body.String(), `"closedMs":null`) {
 		t.Errorf("beads: %d %s", rec.Code, rec.Body)
 	}
 	if rec := get(h, "GET", "/api/repos/nope/beads", ""); rec.Code != 404 {
@@ -204,5 +204,54 @@ func TestFingerprint(t *testing.T) {
 	write("issues.jsonl", "b")
 	if fingerprint(d) == v1 {
 		t.Error("jsonl change not seen")
+	}
+}
+
+func TestEdgesAPI(t *testing.T) {
+	list := `{"issues":[{"id":"x-1","title":"T","status":"open","priority":1,"issue_type":"task","dependency_count":1,"created_at":"2026-11-10T22:47:03Z","updated_at":"2026-11-10T22:47:03Z"}]}`
+	edges := `[{"issue_id":"x-1","depends_on_id":"external:other:o-7","type":"blocks"}]`
+	reg, _ := registry.Load(filepath.Join(t.TempDir(), "repos.json"))
+	dir := filepath.Join(t.TempDir(), "proj")
+	if err := os.MkdirAll(filepath.Join(dir, ".beads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reg.Add(dir); err != nil {
+		t.Fatal(err)
+	}
+	h := New(reg, func(_ context.Context, _, _ string, args ...string) ([]byte, error) {
+		if args[0] == "dep" {
+			return []byte(edges), nil
+		}
+		return []byte(list), nil
+	}, theme.Builtin, fakePeers{}, "vic")
+	rec := get(h, "GET", "/api/repos/proj/edges", "")
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"toRepo":"other","to":"o-7"`) {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestAddDepCrossRepo(t *testing.T) {
+	var ran []string
+	reg, _ := registry.Load(filepath.Join(t.TempDir(), "repos.json"))
+	dir := filepath.Join(t.TempDir(), "proj")
+	if err := os.MkdirAll(filepath.Join(dir, ".beads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reg.Add(dir); err != nil {
+		t.Fatal(err)
+	}
+	h := New(reg, func(_ context.Context, _, _ string, args ...string) ([]byte, error) {
+		ran = args
+		return []byte(`{}`), nil
+	}, theme.Builtin, fakePeers{}, "vic")
+	rec := get(h, "POST", "/api/repos/proj/ops", `{"op":"addDep","from":"x-1","on":"external:other:o-7","type":"related"}`)
+	if rec.Code != 200 || ran[3] != "external:other:o-7" || ran[4] != "--type=related" {
+		t.Fatalf("%d %q", rec.Code, ran)
+	}
+	for _, bad := range []string{"external:other", "--all"} {
+		ran = nil
+		if rec := get(h, "POST", "/api/repos/proj/ops", `{"op":"addDep","from":"x-1","on":"`+bad+`","type":"blocks"}`); rec.Code != 422 || ran != nil {
+			t.Errorf("%s: %d %q", bad, rec.Code, ran)
+		}
 	}
 }

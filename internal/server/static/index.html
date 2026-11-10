@@ -39,6 +39,22 @@ body { overflow: hidden; }
 .composer { margin-top: .8em; }
 .composer textarea { width: 100%; box-sizing: border-box; background: var(--base02); color: var(--base05); border: 1px solid var(--base03); font: inherit; padding: .4em; }
 .chip { color: var(--base0D); cursor: pointer; margin-right: .6em; }
+.edge { stroke: var(--base04); fill: none; stroke-width: 1.5; }
+.edge.soft { stroke-dasharray: 4 3; }
+.gnode { fill: var(--base01); stroke: var(--base03); }
+.gnode.current { stroke: var(--base0D); stroke-width: 2; }
+.gid { fill: var(--base0D); font: 11px monospace; }
+.gtitle { fill: var(--base05); font: 12px monospace; }
+.gext { fill: var(--base0E); font: 10px monospace; }
+.wrow { display: flex; align-items: center; padding: 2px 0; }
+.wrow.current { background: var(--base02); }
+.wlabel { width: 24em; flex: none; white-space: nowrap; overflow: hidden; }
+.wtrack { flex: 1; position: relative; height: 14px; background: var(--base01); }
+.wbar { position: absolute; height: 100%; }
+.wbar.todo { background: var(--base0D); }
+.wbar.doing { background: var(--base0A); }
+.wbar.done { background: var(--base0B); }
+.wbar.blocked { background: var(--base08); }
 .flash { position: fixed; right: 1em; bottom: 3em; background: var(--base02); color: var(--base0B); padding: .4em .8em; border-left: 3px solid var(--base0B); }
 </style>
 </head>

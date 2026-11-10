@@ -3,12 +3,14 @@ module Types exposing
     , Comment
     , Delivery
     , Dep
+    , Edge
     , Repo
     , Session
     , Status(..)
     , beadDecoder
     , commentDecoder
     , deliveryDecoder
+    , edgeDecoder
     , repoDecoder
     , sessionDecoder
     , statusLabel
@@ -117,6 +119,9 @@ type alias Bead =
     , depCount : Int
     , dependentCount : Int
     , deps : List Dep
+    , createdMs : Int
+    , updatedMs : Int
+    , closedMs : Maybe Int
     }
 
 
@@ -153,6 +158,9 @@ beadDecoder =
         |> andMap (D.field "depCount" D.int)
         |> andMap (D.field "dependentCount" D.int)
         |> andMap (D.field "deps" (D.list depDecoder))
+        |> andMap (D.field "createdMs" D.int)
+        |> andMap (D.field "updatedMs" D.int)
+        |> andMap (D.field "closedMs" (D.nullable D.int))
 
 
 type alias Comment =
@@ -202,3 +210,23 @@ deliveryDecoder =
         (D.field "name" D.string)
         (D.field "delivered" D.bool)
         (D.oneOf [ D.field "error" D.string, D.succeed "" ])
+
+
+{-| `from` depends on `to`. `toRepo` is empty for a bead of the same repo, else
+the name of the other repo (a cross-repo link).
+-}
+type alias Edge =
+    { from : String
+    , toRepo : String
+    , to : String
+    , kind : String
+    }
+
+
+edgeDecoder : Decoder Edge
+edgeDecoder =
+    D.map4 Edge
+        (D.field "from" D.string)
+        (D.field "toRepo" D.string)
+        (D.field "to" D.string)
+        (D.field "type" D.string)

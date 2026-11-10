@@ -148,3 +148,33 @@ func DecodeComments(raw []byte) ([]model.Comment, error) {
 	}
 	return out, nil
 }
+
+// DecodeEdges decodes the raw edge records of `br dep list` and `bd dep list`
+// (several ids): a flat array of {issue_id, depends_on_id, type}.
+func DecodeEdges(raw []byte) ([]model.Edge, error) {
+	var rows []struct {
+		From string `json:"issue_id"`
+		To   string `json:"depends_on_id"`
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(raw, &rows); err != nil {
+		return nil, fmt.Errorf("edges: %w", err)
+	}
+	out := make([]model.Edge, 0, len(rows))
+	for _, r := range rows {
+		from, err := model.ParseID(r.From)
+		if err != nil {
+			return nil, err
+		}
+		to, err := model.ParseRef(r.To)
+		if err != nil {
+			return nil, err
+		}
+		t, err := model.ParseDepType(r.Type)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, model.Edge{From: from, To: to, Type: t})
+	}
+	return out, nil
+}
