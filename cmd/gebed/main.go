@@ -82,7 +82,9 @@ func main() {
 		log.Printf("peer endpoint: %v (messages to sessions still go out)", err)
 	}
 	log.Printf("gebed on http://%s", *addr)
-	log.Fatal(http.ListenAndServe(*addr, server.New(reg, store.Exec, themes, net, u.Username)))
+	srv := server.New(reg, store.Exec, themes, net, u.Username)
+	srv.Warm()
+	log.Fatal(http.ListenAndServe(*addr, srv))
 }
 
 // installSkill implements `gebed skill install [-to DIR]`.

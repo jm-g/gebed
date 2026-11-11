@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -560,5 +561,101 @@ func TestMetricsEndpointReadsReportsFromComments(t *testing.T) {
 		if rec.Code != 200 || !strings.Contains(body, want) {
 			t.Fatalf("missing %s in %d %s", want, rec.Code, body)
 		}
+	}
+}
+
+// Warm reads the beads, the long text and the comments of every repo without a
+// request, so the first search or metrics view is not slow.
+func TestWarmBuildsSearchDocsOfEveryRepo(t *testing.T) {
+	reg, _ := registry.Load(filepath.Join(t.TempDir(), "repos.json"))
+	for _, n := range []string{"one", "two"} {
+		d := filepath.Join(t.TempDir(), n)
+		if err := os.MkdirAll(filepath.Join(d, ".beads"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := reg.Add(d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var mu sync.Mutex
+	asked := map[string]bool{}
+	srv := New(reg, func(_ context.Context, dir, _ string, args ...string) ([]byte, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if args[0] == "comments" {
+			asked[filepath.Base(dir)] = true
+		}
+		switch args[0] {
+		case "list":
+			return []byte(`{"issues":[{"id":"x-1","title":"T","status":"open","priority":1,"issue_type":"task","created_at":"2026-11-10T22:47:03Z","updated_at":"2026-11-10T22:47:03Z"}]}`), nil
+		case "show":
+			return []byte(`[{"id":"x-1","title":"T","status":"open","priority":1,"issue_type":"task","created_at":"2026-11-10T22:47:03Z","updated_at":"2026-11-10T22:47:03Z"}]`), nil
+		}
+		return []byte(`[]`), nil
+	}, theme.Builtin, fakePeers{}, "vic")
+	srv.Warm()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		mu.Lock()
+		n := len(asked)
+		mu.Unlock()
+		if n == 2 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("only %v were warmed", asked)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// After an edit only the beads that changed are read again. The change here is
+// only a new comment, which bd does not show in the update time but does in the
+// comment count.
+func TestEditRereadsOnlyTheChangedBead(t *testing.T) {
+	reg, _ := registry.Load(filepath.Join(t.TempDir(), "repos.json"))
+	dir := filepath.Join(t.TempDir(), "proj")
+	if err := os.MkdirAll(filepath.Join(dir, ".beads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	repo, err := reg.Add(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	comments := 0 // the number of comments on x-2
+	reads := map[string]int{}
+	srv := New(reg, func(_ context.Context, _, _ string, args ...string) ([]byte, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		row := func(id string, n int) string {
+			return `{"id":"` + id + `","title":"T","status":"open","priority":1,"issue_type":"task","comment_count":` + strconv.Itoa(n) + `,"created_at":"2026-11-10T22:47:03Z","updated_at":"2026-11-10T22:47:03Z"}`
+		}
+		switch args[0] {
+		case "list":
+			return []byte(`{"issues":[` + row("x-1", 0) + `,` + row("x-2", comments) + `]}`), nil
+		case "show":
+			reads[args[1]]++
+			return []byte(`[` + row(args[1], 0) + `]`), nil
+		}
+		return []byte(`[]`), nil
+	}, theme.Builtin, fakePeers{}, "vic")
+
+	if _, err := srv.a.searchDocs(context.Background(), repo); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	comments = 1
+	mu.Unlock()
+	if err := os.WriteFile(filepath.Join(dir, ".beads", "issues.jsonl"), []byte("changed"), 0o644); err != nil { // the store changed
+		t.Fatal(err)
+	}
+	if _, err := srv.a.searchDocs(context.Background(), repo); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if reads["x-1"] != 1 || reads["x-2"] != 2 {
+		t.Fatalf("x-1 read %d times (want 1), x-2 read %d times (want 2)", reads["x-1"], reads["x-2"])
 	}
 }

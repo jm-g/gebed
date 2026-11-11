@@ -32,3 +32,7 @@ run *args="":
 bundle-fresh:
     cd web && elm make src/Main.elm --optimize --output=/tmp/gebed-app.js
     cmp /tmp/gebed-app.js internal/server/static/app.js
+
+# Re-record docs/demo.gif from the seeded demo projects (needs a few minutes)
+demo:
+    nix shell nixpkgs#libfaketime nixpkgs#ffmpeg nixpkgs#gifsicle -c sh demo/record.sh docs/demo.gif

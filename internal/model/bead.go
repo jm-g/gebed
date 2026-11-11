@@ -119,6 +119,7 @@ type Bead struct {
 	Updated        time.Time
 	Closed         *time.Time
 	Due            *time.Time // delivery estimate
+	CommentCount   int        // comments on the bead, when the CLI lists it (bd does)
 	EstimateMin    int        // planned length, minutes (0 = none)
 	CloseReason    string
 	DepCount       int

@@ -2,6 +2,7 @@
 package server
 
 import (
+	"context"
 	"embed"
 	"io/fs"
 	"net/http"
@@ -14,8 +15,15 @@ import (
 //go:embed static
 var static embed.FS
 
+// Server is the http handler of gebed, with a way to warm its caches.
+type Server struct {
+	http.Handler
+	a   *api
+	reg *registry.Registry
+}
+
 // New serves the web bundle at / and the JSON API under /api.
-func New(reg *registry.Registry, run store.Runner, themes func() []theme.Scheme, peers Peers, user string) http.Handler {
+func New(reg *registry.Registry, run store.Runner, themes func() []theme.Scheme, peers Peers, user string) *Server {
 	sub, err := fs.Sub(static, "static")
 	if err != nil {
 		panic(err) // static is embedded at build time; Sub only fails on a bad path literal
@@ -36,5 +44,15 @@ func New(reg *registry.Registry, run store.Runner, themes func() []theme.Scheme,
 	mux.HandleFunc("GET /api/repos/{name}/edges", a.listEdges)
 	mux.HandleFunc("GET /api/repos/{name}/version", a.version)
 	mux.Handle("/", http.FileServerFS(sub))
-	return mux
+	return &Server{Handler: mux, a: a, reg: reg}
+}
+
+// Warm reads every registered repo in the background: its beads and edges, and
+// the text and reports that search and metrics need. The first search or metrics
+// view then does not wait for hundreds of CLI calls, and a slow backend such as
+// bd does not stall it.
+func (s *Server) Warm() {
+	for _, repo := range s.reg.List() {
+		go func() { _, _ = s.a.searchDocs(context.Background(), repo) }() // a failure only means the first use builds it
+	}
 }

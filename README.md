@@ -1,5 +1,7 @@
 # gebed
 
+![gebed: kanban, epics, waterfall zoom to the minute, flow metrics, search and agents, all from the keyboard](docs/demo.gif)
+
 gebed is a small web app for your beads. If you track work with `br` or `bd` in a few different repos, gebed puts all of it in one browser tab: you can see it, edit it, and talk about it there.
 
 It is one Go binary with the UI inside. It doesn't care if a repo uses `br` (sqlite and jsonl) or `bd` (dolt), they look and work the same. gebed never opens those databases itself, it just runs `br` and `bd` and reads what they print.
@@ -67,3 +69,12 @@ $ just test
 `nix build` gives you the binary directly. The compiled Elm bundle is committed, so after changing anything in `web/` run `just build` and commit `internal/server/static/app.js`. CI checks that it's up to date.
 
 Releases ship static binaries for Linux and macOS, amd64 and arm64.
+
+## The demo
+
+The GIF at the top is recorded from the real app. `demo/seed.sh` builds a dummy product with six epics, fifty-odd beads with weeks of history, discussions, agent reports and plans (two `br` repos and one `bd` repo), and `demo/record.sh` plays a scripted tour in headless Chromium and encodes `docs/demo.gif`:
+
+```console
+$ nix develop
+$ just demo
+```

@@ -28,6 +28,7 @@ type issue struct {
 	UpdatedAt      time.Time  `json:"updated_at"`
 	ClosedAt       *time.Time `json:"closed_at"`
 	DueAt          *time.Time `json:"due_at"`
+	CommentCount   int        `json:"comment_count"`
 	EstimateMin    int        `json:"estimated_minutes"`
 	CloseReason    string     `json:"close_reason"`
 	DepCount       int        `json:"dependency_count"`
@@ -86,7 +87,7 @@ func (w issue) bead() (model.Bead, error) {
 		ID: id, Title: w.Title, Description: w.Description, Design: w.Design,
 		Acceptance: w.Acceptance, Notes: w.Notes, Status: st, Kind: k, Priority: p,
 		Assignee: w.Assignee, Owner: w.Owner, Labels: w.Labels,
-		Created: w.CreatedAt, Updated: w.UpdatedAt, Closed: w.ClosedAt, Due: w.DueAt, EstimateMin: w.EstimateMin,
+		Created: w.CreatedAt, Updated: w.UpdatedAt, Closed: w.ClosedAt, Due: w.DueAt, CommentCount: w.CommentCount, EstimateMin: w.EstimateMin,
 		CloseReason: w.CloseReason, DepCount: w.DepCount, DependentCount: w.DependentCount,
 		Deps: deps,
 	}, nil

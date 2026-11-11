@@ -3,10 +3,11 @@ package server
 import (
 	"context"
 	"fmt"
-	"gebed/internal/metrics"
 	"strings"
 	"sync"
+	"time"
 
+	"gebed/internal/metrics"
 	"gebed/internal/model"
 	"gebed/internal/registry"
 	"gebed/internal/search"
@@ -32,19 +33,64 @@ type epicJSON struct {
 	Title string `json:"title"`
 }
 
+// docKey says whether a bead's search document is still current. br bumps a
+// bead's update time on a comment and bd does not, so the comment count is part
+// of it; the epics are part of it because they are searchable text.
+type docKey struct {
+	updated  time.Time
+	comments int
+	epics    string
+}
+
+type docEntry struct {
+	key  docKey
+	doc  search.Doc
+	reps []metrics.Stamped
+}
+
+func keyOf(b model.Bead, epics []epicJSON) docKey {
+	var e []string
+	for _, x := range epics {
+		e = append(e, x.ID+" "+x.Title)
+	}
+	return docKey{b.Updated, b.CommentCount, strings.Join(e, "|")}
+}
+
+// snapshots keeps one snapshot per repo and, across snapshots, the documents of
+// beads that did not change, so an edit costs two CLI calls and not hundreds.
 type snapshots struct {
-	mu sync.Mutex
-	by map[string]*snap
+	mu    sync.Mutex // guards the maps and the fields of every snap, never held across a CLI call
+	by    map[string]*snap
+	docs  map[string]map[string]docEntry // repo -> bead id -> document
+	locks map[string]*sync.Mutex         // one per repo and job, so a slow repo does not stall the others
+}
+
+func (s *snapshots) lockFor(name string) *sync.Mutex {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.locks == nil {
+		s.locks = map[string]*sync.Mutex{}
+	}
+	m := s.locks[name]
+	if m == nil {
+		m = &sync.Mutex{}
+		s.locks[name] = m
+	}
+	return m
 }
 
 // snapshot returns the repo's current snapshot, reading the CLI only when the
 // store changed since the last one.
 func (a *api) snapshot(ctx context.Context, repo registry.Repo) (*snap, error) {
-	a.snaps.mu.Lock()
-	defer a.snaps.mu.Unlock()
+	l := a.snaps.lockFor("snap:" + repo.Name)
+	l.Lock()
+	defer l.Unlock()
 	fp := fingerprint(repo.Dir)
-	if s := a.snaps.by[repo.Name]; s != nil && s.fp == fp {
-		return s, nil
+	a.snaps.mu.Lock()
+	cur := a.snaps.by[repo.Name]
+	a.snaps.mu.Unlock()
+	if cur != nil && cur.fp == fp {
+		return cur, nil
 	}
 	st, err := store.Open(repo.Dir, a.run)
 	if err != nil {
@@ -59,10 +105,12 @@ func (a *api) snapshot(ctx context.Context, repo registry.Repo) (*snap, error) {
 		return nil, err
 	}
 	s := &snap{fp: fp, beads: bs, edges: es, epics: epicsOf(bs, es)}
+	a.snaps.mu.Lock()
 	if a.snaps.by == nil {
 		a.snaps.by = map[string]*snap{}
 	}
 	a.snaps.by[repo.Name] = s
+	a.snaps.mu.Unlock()
 	return s, nil
 }
 
@@ -90,9 +138,13 @@ func epicsOf(bs []model.Bead, es []model.Edge) map[string][]epicJSON {
 const docWorkers = 8
 
 // searchDocs builds the searchable text of every bead: the fields the list
-// gives, the long text only `show` gives, and the discussion. It runs a bounded
-// number of CLI calls at once and is cached with the snapshot.
+// gives, the long text only `show` gives, and the discussion. A bead whose key
+// did not change keeps its earlier document; only changed beads cost CLI calls,
+// at most docWorkers at once.
 func (a *api) searchDocs(ctx context.Context, repo registry.Repo) ([]search.Doc, error) {
+	dl := a.snaps.lockFor("docs:" + repo.Name)
+	dl.Lock()
+	defer dl.Unlock()
 	s, err := a.snapshot(ctx, repo)
 	if err != nil {
 		return nil, err
@@ -103,6 +155,7 @@ func (a *api) searchDocs(ctx context.Context, repo registry.Repo) ([]search.Doc,
 		a.snaps.mu.Unlock()
 		return d, nil
 	}
+	old := a.snaps.docs[repo.Name]
 	a.snaps.mu.Unlock()
 
 	st, err := store.Open(repo.Dir, a.run)
@@ -111,36 +164,49 @@ func (a *api) searchDocs(ctx context.Context, repo registry.Repo) ([]search.Doc,
 	}
 	docs := make([]search.Doc, len(s.beads))
 	reps := make([][]metrics.Stamped, len(s.beads))
+	keys := make([]docKey, len(s.beads))
+	good := make([]bool, len(s.beads))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, docWorkers)
-	var firstErr error
-	var errMu sync.Mutex
 	for i, b := range s.beads {
+		keys[i] = keyOf(b, s.epics[b.ID.String()])
+		if e, ok := old[b.ID.String()]; ok && e.key == keys[i] {
+			docs[i], reps[i], good[i] = e.doc, e.reps, true
+			continue
+		}
 		wg.Add(1)
 		sem <- struct{}{}
 		go func() {
 			defer func() { <-sem; wg.Done() }()
 			full, err := st.Get(ctx, b.ID)
 			if err != nil {
-				full = b // the list row is still searchable
-				errMu.Lock()
-				if firstErr == nil {
-					firstErr = err
-				}
-				errMu.Unlock()
+				full = b // the list row is still searchable, but this document is not kept
 			}
-			cs, _ := st.Comments(ctx, b.ID) // a bead without readable comments is still found by the rest
+			cs, cerr := st.Comments(ctx, b.ID)
 			reps[i] = reportsOf(cs)
 			docs[i] = docOf(repo.Name, full, s.epics[b.ID.String()], cs)
+			good[i] = err == nil && cerr == nil
 		}()
 	}
 	wg.Wait()
-	if firstErr != nil && len(docs) > 0 {
-		// partial docs are still useful; do not cache them so the next search retries
-		return docs, nil
+
+	kept := map[string]docEntry{}
+	complete := true
+	for i, b := range s.beads {
+		if good[i] {
+			kept[b.ID.String()] = docEntry{keys[i], docs[i], reps[i]}
+		} else {
+			complete = false
+		}
 	}
 	a.snaps.mu.Lock()
-	s.docs, s.reports, s.built = docs, reps, true
+	if a.snaps.docs == nil {
+		a.snaps.docs = map[string]map[string]docEntry{}
+	}
+	a.snaps.docs[repo.Name] = kept
+	if complete { // partial documents are still returned, but the next search retries
+		s.docs, s.reports, s.built = docs, reps, true
+	}
 	a.snaps.mu.Unlock()
 	return docs, nil
 }
