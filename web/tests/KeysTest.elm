@@ -30,6 +30,9 @@ suite =
             \_ ->
                 [ press [ " ", "v" ] "g", press [ " ", "v" ] "w", press [ " ", "e" ] "l", press [ " ", "e" ] "+" ]
                     |> Expect.equal [ Run (Show GraphView), Run (Show WaterfallView), Run (Compose Link), Run (Compose AddLabel) ]
+        , test "add repo key" <|
+            \_ ->
+                press [ " ", "p" ] "a" |> Expect.equal (Run (Compose AddRepo))
         , test "priority digits" <|
             \_ ->
                 press [ " ", "e", "p" ] "0" |> Expect.equal (Run (SetPriority 0))
@@ -40,5 +43,5 @@ suite =
         , test "leader hints list the groups" <|
             \_ ->
                 hints [ " " ]
-                    |> Expect.equal [ ( "v", "view …" ), ( "e", "edit …" ), ( "t", "theme …" ), ( "r", "reload" ) ]
+                    |> Expect.equal [ ( "v", "view …" ), ( "e", "edit …" ), ( "p", "project …" ), ( "t", "theme …" ), ( "r", "reload" ) ]
         ]

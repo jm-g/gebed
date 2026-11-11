@@ -75,6 +75,7 @@ type Msg
     | GotEdges String (Result Http.Error (List Edge))
     | GotVersion String (Result Http.Error String)
     | OpDone (Result String OpResult)
+    | RepoAdded (Result String String)
     | Pick String
     | Key String
     | Tick Time.Posix
@@ -242,11 +243,18 @@ postOp repo fields =
 
 expectOp : Http.Expect Msg
 expectOp =
-    Http.expectStringResponse OpDone
+    expectApi OpDone opResultDecoder
+
+
+{-| Read a JSON answer; a refusal carries {"error": ...}, which is returned as the message.
+-}
+expectApi : (Result String a -> Msg) -> D.Decoder a -> Http.Expect Msg
+expectApi toMsg decoder =
+    Http.expectStringResponse toMsg
         (\response ->
             case response of
                 Http.GoodStatus_ _ body ->
-                    D.decodeString opResultDecoder body |> Result.mapError D.errorToString
+                    D.decodeString decoder body |> Result.mapError D.errorToString
 
                 Http.BadStatus_ _ body ->
                     Err (D.decodeString (D.field "error" D.string) body |> Result.withDefault body)
@@ -260,6 +268,15 @@ expectOp =
                 Http.NetworkError_ ->
                     Err "network error"
         )
+
+
+postRepo : String -> Cmd Msg
+postRepo dir =
+    Http.post
+        { url = "/api/repos"
+        , body = Http.jsonBody (E.object [ ( "dir", E.string (String.trim dir) ) ])
+        , expect = expectApi RepoAdded (D.field "name" D.string)
+        }
 
 
 opResultDecoder : D.Decoder OpResult
@@ -351,12 +368,20 @@ update msg model =
             ( model, Cmd.none )
 
         GotRepos (Ok repos) ->
-            case List.head repos of
-                Just first ->
-                    ( { model | repos = Ready repos, current = Just first.name }, getBeads first.name )
-
-                Nothing ->
+            let
+                keep =
+                    List.filter (\r -> Just r.name == model.current) repos |> List.head
+            in
+            case ( keep, List.head repos ) of
+                ( Just _, _ ) ->
                     ( { model | repos = Ready repos }, Cmd.none )
+
+                ( Nothing, Just first ) ->
+                    ( { model | repos = Ready repos, current = Just first.name, beads = Loading }, getBeads first.name )
+
+                ( Nothing, Nothing ) ->
+                    -- no repos: nothing to load, the main pane explains how to add one
+                    ( { model | repos = Ready repos, current = Nothing, beads = Ready [] }, Cmd.none )
 
         GotRepos (Err e) ->
             ( { model | repos = Failed (httpError e) }, Cmd.none )
@@ -484,11 +509,28 @@ update msg model =
 
         Submit ->
             case ( model.compose, model.current ) of
-                ( Just c, Just repo ) ->
-                    ( model, postOp repo (composeFields c) )
+                ( Just { kind, text }, _ ) ->
+                    if kind == AddRepo then
+                        ( model, postRepo text )
+
+                    else
+                        case ( model.compose, model.current ) of
+                            ( Just c, Just repo ) ->
+                                ( model, postOp repo (composeFields c) )
+
+                            _ ->
+                                ( model, Cmd.none )
 
                 _ ->
                     ( model, Cmd.none )
+
+        RepoAdded (Ok name) ->
+            ( { model | compose = Nothing, current = Just name, beads = Loading, sel = 0, detail = Nothing, version = Nothing, flash = Just ("added " ++ name) }
+            , Cmd.batch [ getRepos, getBeads name ]
+            )
+
+        RepoAdded (Err e) ->
+            ( { model | flash = Just ("not added: " ++ e) }, Cmd.none )
 
         OpDone (Ok r) ->
             let
@@ -627,6 +669,9 @@ run action model =
                 _ ->
                     ( model, Cmd.none )
 
+        Compose AddRepo ->
+            ( { model | compose = Just { kind = AddRepo, target = "", text = "" } }, focusComposer )
+
         Compose NewBead ->
             ( { model | compose = Just { kind = NewBead, target = "", text = "" } }, focusComposer )
 
@@ -714,7 +759,7 @@ view model =
     in
     div (class "app" :: themeVars)
         [ div [ class "sidebar" ] (loaded model.repos (viewRepos model.current))
-        , div [ class "main" ] (loaded model.beads (viewBody model))
+        , div [ class "main" ] (viewMain model)
         , viewDetail model
         , viewFlash model
         , viewPopup model
@@ -778,6 +823,15 @@ repoItem current r =
 
 viewBody : Model -> List Bead -> List (Html Msg)
 viewBody model beads =
+    if List.isEmpty beads then
+        [ div [ class "empty" ] [ div [ class "dtitle" ] [ text "No beads in this repo yet" ], div [] [ text "Press n to create the first one." ] ] ]
+
+    else
+        viewBodyWith model beads
+
+
+viewBodyWith : Model -> List Bead -> List (Html Msg)
+viewBodyWith model beads =
     let
         sel =
             selected model |> Maybe.map .id
@@ -921,6 +975,9 @@ viewComposer model c =
 
                 Rename ->
                     "rename " ++ c.target
+
+                AddRepo ->
+                    "add a repo: full path of a directory that has a .beads folder"
 
                 Link ->
                     c.target ++ " depends on … (bead id, or repo:id for another repo)"
@@ -1091,3 +1148,20 @@ statusClass b =
 
         _ ->
             "todo"
+
+
+{-| The main pane. With no repos it says how to add one, so the page is never blank.
+-}
+viewMain : Model -> List (Html Msg)
+viewMain model =
+    case model.repos of
+        Ready [] ->
+            [ div [ class "empty" ]
+                [ div [ class "dtitle" ] [ text "No repos yet" ]
+                , div [] [ text "Press SPC p a and type the path of a repo that has a .beads folder." ]
+                , div [ class "dim" ] [ text "Or start gebed with the paths: gebed ~/code/one ~/code/two" ]
+                ]
+            ]
+
+        _ ->
+            loaded model.beads (viewBody model)

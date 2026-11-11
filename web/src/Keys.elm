@@ -24,6 +24,7 @@ type ComposeKind
     | Ask
     | Rename
     | Link
+    | AddRepo
     | AddLabel
     | RemoveLabel
 
@@ -111,6 +112,9 @@ root =
             , leaf "+" "add label" (Compose AddLabel)
             , leaf "-" "remove label" (Compose RemoveLabel)
             ]
+        , group "p"
+            "project"
+            [ leaf "a" "add repo (directory with .beads)" (Compose AddRepo) ]
         , group "t" "theme" [ leaf "n" "next theme" NextTheme ]
         , leaf "r" "reload" Reload
         ]
