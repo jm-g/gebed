@@ -31,7 +31,7 @@ The waterfall has a time ruler. Each task has a delivery date and a length, so i
 
 Agents finish work in minutes, so the waterfall zooms: `+` and `-` go from one day per cell down to 6 hours, an hour, 15 and 5 minutes. At each zoom `H` and `L` slide a task by one cell and `<` and `>` shorten or extend it by one cell. Times are stored to the minute in the bead (`due` and the estimate).
 
-Colors come from base16 and base24 schemes, `SPC t n` cycles them. Drop your own `.yaml` files in `~/.config/gebed/themes/`.
+Colors come from base16 and base24 schemes, `SPC t` opens a fuzzy picker that previews each theme as you move through it. Drop your own `.yaml` files in `~/.config/gebed/themes/`.
 
 A bead can depend on a bead in another repo. Type `repo:id` when you link, and the graph shows it.
 

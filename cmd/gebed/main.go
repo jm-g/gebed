@@ -42,7 +42,8 @@ func main() {
 		log.Fatal(err)
 	}
 	for _, dir := range flag.Args() { // repos given on the command line are registered
-		if _, err := reg.Add(dir); err != nil {
+		name, p := registry.ParseLine(dir)
+		if _, err := reg.AddNamed(name, p); err != nil {
 			log.Fatal(err)
 		}
 	}

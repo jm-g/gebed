@@ -45,6 +45,7 @@ type ComposeKind
     | Rename
     | Link
     | AddRepo
+    | RemoveRepo
     | SetEpic
     | ClearEpic
     | AddLabel
@@ -70,7 +71,7 @@ type Action
     | ShowAllKeys
     | Sponsor
     | Show View
-    | NextTheme
+    | PickTheme
     | Reload
     | Help
     | OpenDetail
@@ -180,8 +181,10 @@ root =
             ]
         , group "p"
             "project"
-            [ leaf "a" "add repo (directory with .beads)" (Compose AddRepo) ]
-        , group "t" "theme" [ leaf "n" "next theme" NextTheme ]
+            [ leaf "a" "add repo (directory with .beads)" (Compose AddRepo)
+            , leaf "r" "remove repo (type its name)" (Compose RemoveRepo)
+            ]
+        , leaf "t" "theme (fuzzy, live)" PickTheme
         , leaf "r" "reload" Reload
         , leaf "Backspace" "ALL keys" ShowAllKeys
         , leaf "S" "Sponsor <3 (opens in a new tab)" Sponsor

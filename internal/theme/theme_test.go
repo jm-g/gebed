@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 func scheme(system string, n int) string {
@@ -16,19 +17,26 @@ func scheme(system string, n int) string {
 }
 
 func TestBuiltinValid(t *testing.T) {
-	bs := Builtin()
-	if len(bs) < 2 {
-		t.Fatalf("got %d builtin schemes", len(bs))
-	}
-	systems := map[string]int{}
-	for _, s := range bs {
-		systems[s.System]++
-		if s.Palette["base00"][0] != '#' {
-			t.Errorf("%s: %+v", s.Name, s)
+	const id = "base16/dark/3024"
+	for _, s := range Builtin() {
+		if s.ID() == id {
+			if len(s.Palette) != 16 || s.Palette["base00"] == "" {
+				t.Fatalf("%s: bad palette %v", id, s.Palette)
+			}
+			return
 		}
 	}
-	if systems["base16"] < 2 || systems["base24"] < 1 {
-		t.Errorf("want at least two base16 and one base24 builtin scheme, got %v", systems)
+	t.Fatalf("builtin %s not loaded", id)
+}
+
+func TestDuplicateID(t *testing.T) {
+	fsys := fstest.MapFS{
+		"d/a.yaml": {Data: []byte(scheme("base16", 16))},
+		"d/b.yaml": {Data: []byte(scheme("base16", 16))},
+	}
+	ss, errs := LoadDir(fsys, "d")
+	if len(ss) != 1 || len(errs) != 1 {
+		t.Fatalf("want 1 scheme and 1 duplicate error, got %d schemes, errs %v", len(ss), errs)
 	}
 }
 

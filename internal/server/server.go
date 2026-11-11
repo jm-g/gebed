@@ -33,6 +33,7 @@ func New(reg *registry.Registry, run store.Runner, themes func() []theme.Scheme,
 	mux.HandleFunc("GET /api/repos", a.listRepos)
 	mux.HandleFunc("GET /api/themes", a.listThemes)
 	mux.HandleFunc("POST /api/repos", a.addRepo)
+	mux.HandleFunc("DELETE /api/repos/{name}", a.removeRepo)
 	mux.HandleFunc("GET /api/repos/{name}/beads", a.listBeads)
 	mux.HandleFunc("GET /api/repos/{name}/beads/{id}", a.getBead)
 	mux.HandleFunc("POST /api/repos/{name}/ops", a.applyOp)

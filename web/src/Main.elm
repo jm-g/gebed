@@ -7,7 +7,7 @@ import Browser.Dom as Dom
 import Browser.Events
 import Calendar
 import Charts
-import Html exposing (Html, div, li, span, text, textarea, ul)
+import Html exposing (Html, div, li, node, span, text, textarea, ul)
 import Html.Attributes as A exposing (class, classList)
 import Html.Events exposing (onClick, onInput)
 import Http
@@ -68,6 +68,7 @@ type alias Model =
     , beads : Loaded (List Bead)
     , themes : List Theme.Scheme
     , themeIdx : Int
+    , picker : Maybe ThemePicker
     , view : View
     , selId : Maybe String
     , today : Int
@@ -100,6 +101,15 @@ type alias Finder =
     }
 
 
+{-| orig is the theme index to restore when the picker is cancelled.
+-}
+type alias ThemePicker =
+    { query : String
+    , sel : Int
+    , orig : Int
+    }
+
+
 type alias Drag =
     { id : String
     , startX : Float
@@ -125,6 +135,7 @@ type Msg
     | GotVersion String (Result Http.Error String)
     | OpDone (Result String OpResult)
     | RepoAdded (Result String String)
+    | RepoRemoved String (Result Http.Error ())
     | Pick String
     | Key String
     | Tick Time.Posix
@@ -146,6 +157,10 @@ type Msg
     | FinderMove Int
     | FinderOpen
     | FinderClose
+    | ThemeInput String
+    | ThemeMove Int
+    | ThemeConfirm
+    | ThemeCancel
     | NoOp
 
 
@@ -159,6 +174,7 @@ main =
                   , beads = Loading
                   , themes = []
                   , themeIdx = 0
+                  , picker = Nothing
                   , view = KanbanView
                   , selId = Nothing
                   , today = 0
@@ -356,6 +372,19 @@ expectApi toMsg decoder =
         )
 
 
+deleteRepo : String -> Cmd Msg
+deleteRepo name =
+    Http.request
+        { method = "DELETE"
+        , headers = []
+        , url = "/api/repos/" ++ Url.percentEncode name
+        , body = Http.emptyBody
+        , expect = Http.expectWhatever (RepoRemoved name)
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
 postRepo : String -> Cmd Msg
 postRepo dir =
     Http.post
@@ -509,6 +538,18 @@ update msg model =
                 Nothing ->
                     ( { model | finder = Nothing }, Cmd.none )
 
+        ThemeInput q ->
+            ( previewTheme 0 { model | picker = Maybe.map (\p -> { p | query = q }) model.picker }, Cmd.none )
+
+        ThemeMove d ->
+            ( previewTheme (Maybe.withDefault 0 (Maybe.map (\p -> p.sel + d) model.picker)) model, Cmd.none )
+
+        ThemeConfirm ->
+            ( { model | picker = Nothing }, Cmd.none )
+
+        ThemeCancel ->
+            ( { model | picker = Nothing, themeIdx = Maybe.withDefault model.themeIdx (Maybe.map .orig model.picker) }, Cmd.none )
+
         GotClock d off now ->
             ( { model | today = d, offset = off, nowMin = now }, Cmd.none )
 
@@ -590,7 +631,7 @@ update msg model =
             ( { model | repos = Failed (httpError e) }, Cmd.none )
 
         GotThemes (Ok ts) ->
-            ( { model | themes = ts }, Cmd.none )
+            ( { model | themes = ts, themeIdx = Theme.defaultIndex ts }, Cmd.none )
 
         GotThemes (Err _) ->
             -- the css defaults stay in effect
@@ -749,6 +790,9 @@ update msg model =
                     if kind == AddRepo then
                         ( model, postRepo text )
 
+                    else if kind == RemoveRepo then
+                        ( model, deleteRepo (String.trim text) )
+
                     else
                         case ( model.compose, model.current ) of
                             ( Just c, Just repo ) ->
@@ -767,6 +811,12 @@ update msg model =
 
         RepoAdded (Err e) ->
             ( { model | flash = Just ("not added: " ++ e) }, Cmd.none )
+
+        RepoRemoved name (Ok ()) ->
+            ( { model | compose = Nothing, flash = Just ("removed " ++ name ++ " (its folder stays on disk)") }, getRepos )
+
+        RepoRemoved name (Err e) ->
+            ( { model | flash = Just ("not removed " ++ name ++ ": " ++ httpError e) }, Cmd.none )
 
         OpDone (Ok r) ->
             let
@@ -1022,8 +1072,8 @@ run action model =
                 ]
             )
 
-        NextTheme ->
-            ( { model | themeIdx = modBy (max 1 (List.length model.themes)) (model.themeIdx + 1) }, Cmd.none )
+        PickTheme ->
+            ( { model | picker = Just { query = "", sel = 0, orig = model.themeIdx }, pending = [] }, focusThemePicker )
 
         Reload ->
             ( model, refresh model )
@@ -1046,6 +1096,9 @@ run action model =
 
         Compose NewBead ->
             ( { model | compose = Just { kind = NewBead, target = "", text = "" } }, focusComposer )
+
+        Compose RemoveRepo ->
+            ( { model | compose = Just { kind = RemoveRepo, target = "", text = "" } }, focusComposer )
 
         Compose kind ->
             case target model of
@@ -1246,15 +1299,16 @@ httpError e =
 view : Model -> Html Msg
 view model =
     let
-        themeVars =
+        themeCss =
             model.themes
                 |> List.drop model.themeIdx
                 |> List.head
-                |> Maybe.map Theme.vars
-                |> Maybe.withDefault []
+                |> Maybe.map Theme.css
+                |> Maybe.withDefault ""
     in
-    div (class "root" :: themeVars)
-        [ viewBar model
+    div [ class "root" ]
+        [ node "style" [] [ text themeCss ]
+        , viewBar model
         , viewTabs model
         , div [ class "app" ]
             [ div [ class "sidebar" ] (loaded model.repos (viewRepos model.current))
@@ -1264,6 +1318,7 @@ view model =
         , viewFlash model
         , viewPopup model
         , viewFinder model
+        , viewThemePicker model
         , viewAllKeys model
         ]
 
@@ -1472,7 +1527,10 @@ viewComposer model c =
                     "rename " ++ c.target
 
                 AddRepo ->
-                    "add a repo: full path of a directory that has a .beads folder"
+                    "add repos: one per line, path or name:path (name defaults to the folder name); ~ is home"
+
+                RemoveRepo ->
+                    "remove a repo: type its name (the folder stays on disk)"
 
                 SetEpic ->
                     "put " ++ c.target ++ " in an epic: type the epic id"
@@ -1731,6 +1789,9 @@ viewBar model =
         ( mode, modeClass ) =
             if model.finder /= Nothing then
                 ( "-FIND-", "insert" )
+
+            else if model.picker /= Nothing then
+                ( "-THEME-", "insert" )
 
             else if model.compose /= Nothing then
                 ( "-INSERT-", "insert" )
@@ -2324,6 +2385,108 @@ viewFinder model =
                     , div [ class "dim findfoot" ] [ text "↑ ↓ or Ctrl+p Ctrl+n move · Enter open · Esc close" ]
                     ]
                 ]
+
+
+{-| Selects the sel-th match as the live theme. With no match the theme goes back
+to the one the picker opened with.
+-}
+previewTheme : Int -> Model -> Model
+previewTheme sel model =
+    case model.picker of
+        Just p ->
+            let
+                hits =
+                    Theme.search p.query model.themes
+
+                s =
+                    clampInt 0 (max 0 (List.length hits - 1)) sel
+            in
+            { model | picker = Just { p | sel = s }, themeIdx = List.drop s hits |> List.head |> Maybe.withDefault p.orig }
+
+        Nothing ->
+            model
+
+
+themeKeys : D.Decoder Msg
+themeKeys =
+    D.map2 Tuple.pair (D.field "key" D.string) (D.field "ctrlKey" D.bool)
+        |> D.andThen
+            (\( k, ctrl ) ->
+                case ( k, ctrl ) of
+                    ( "Escape", _ ) ->
+                        D.succeed ThemeCancel
+
+                    ( "Enter", _ ) ->
+                        D.succeed ThemeConfirm
+
+                    ( "ArrowDown", _ ) ->
+                        D.succeed (ThemeMove 1)
+
+                    ( "ArrowUp", _ ) ->
+                        D.succeed (ThemeMove -1)
+
+                    ( "n", True ) ->
+                        D.succeed (ThemeMove 1)
+
+                    ( "p", True ) ->
+                        D.succeed (ThemeMove -1)
+
+                    _ ->
+                        D.fail "typing"
+            )
+
+
+viewThemePicker : Model -> Html Msg
+viewThemePicker model =
+    case model.picker of
+        Nothing ->
+            text ""
+
+        Just p ->
+            let
+                hits =
+                    Theme.search p.query model.themes
+
+                row i s =
+                    div [ classList [ ( "hit", True ), ( "current", i == p.sel ) ] ]
+                        [ span [ class "hitid" ] [ text s.name ]
+                        , span [ class "hitfield" ] [ text (s.system ++ " " ++ s.variant) ]
+                        ]
+
+                rows =
+                    List.indexedMap Tuple.pair hits
+                        |> List.filterMap (\( i, idx ) -> List.drop idx model.themes |> List.head |> Maybe.map (row i))
+            in
+            div [ class "finder" ]
+                [ div [ class "finderbox" ]
+                    [ div [ class "findhead" ]
+                        [ span [ class "findmode" ] [ text "THEME" ]
+                        , span [ class "dim" ] [ text "live preview · Enter keep · Esc restore" ]
+                        ]
+                    , Html.input
+                        [ A.id "theme-picker"
+                        , A.value p.query
+                        , A.placeholder "type to filter themes"
+                        , A.autocomplete False
+                        , onInput ThemeInput
+                        , Html.Events.on "keydown" themeKeys
+                        ]
+                        []
+                    , div [ class "hits" ]
+                        (if List.isEmpty hits then
+                            [ div [ class "dim hitnone" ] [ text "no theme matches" ] ]
+
+                         else
+                            rows
+                        )
+                    , div [ class "dim findfoot" ] [ text "↑ ↓ or Ctrl+p Ctrl+n preview · Enter keep · Esc restore" ]
+                    ]
+                ]
+
+
+focusThemePicker : Cmd Msg
+focusThemePicker =
+    Dom.focus "theme-picker" |> Task.attempt (\_ -> NoOp)
 
 
 {-| Go to a search hit: switch repo if it is in another one, select the bead and

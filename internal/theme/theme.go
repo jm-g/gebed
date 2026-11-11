@@ -28,6 +28,27 @@ var (
 // size is the number of colors each system must define.
 var size = map[string]int{"base16": 16, "base24": 24}
 
+// ID identifies a scheme. The same name recurs across systems and variants,
+// so the name alone is not unique.
+func (s Scheme) ID() string {
+	return fmt.Sprintf("%s/%s/%s", s.System, s.Variant, s.Name)
+}
+
+// value returns the scalar of a `key: value` line: the text inside a quoted
+// string, or the bare text before an inline ` #` comment.
+func value(raw string) string {
+	raw = strings.TrimSpace(raw)
+	for _, q := range []string{`"`, `'`} {
+		if rest, ok := strings.CutPrefix(raw, q); ok {
+			if inner, _, ok := strings.Cut(rest, q); ok {
+				return inner
+			}
+		}
+	}
+	bare, _, _ := strings.Cut(raw, " #")
+	return strings.TrimSpace(bare)
+}
+
 // Parse reads the subset of the scheme YAML that tinted-theming defines: top
 // level `name`, `system`, `variant` and a `palette:` block of `baseNN: color`.
 // Colors are normalized to "#rrggbb"; a scheme that misses a color is an error.
@@ -36,15 +57,19 @@ func Parse(b []byte) (Scheme, error) {
 	inPalette := false
 	for _, line := range strings.Split(string(b), "\n") {
 		trim := strings.TrimSpace(line)
-		if trim == "" || strings.HasPrefix(trim, "#") {
+		if trim == "" || trim == "---" || strings.HasPrefix(trim, "#") {
 			continue
 		}
+		indented := strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t")
 		key, val, ok := strings.Cut(trim, ":")
 		if !ok {
+			if indented {
+				continue // continuation of a block scalar, e.g. description: |
+			}
 			return Scheme{}, fmt.Errorf("bad line %q", trim)
 		}
-		val = strings.Trim(strings.TrimSpace(val), `"'`)
-		if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
+		val = value(val)
+		if !indented {
 			inPalette = key == "palette"
 			switch key {
 			case "name":
@@ -87,9 +112,11 @@ func Parse(b []byte) (Scheme, error) {
 }
 
 // LoadDir parses every *.yaml/*.yml in fsys; bad files are returned as errors.
+// A scheme whose ID was already loaded is an error and is skipped.
 func LoadDir(fsys fs.FS, dir string) ([]Scheme, []error) {
 	var out []Scheme
 	var errs []error
+	seen := map[string]string{}
 	ents, err := fs.ReadDir(fsys, dir)
 	if err != nil {
 		return nil, []error{err}
@@ -109,6 +136,11 @@ func LoadDir(fsys fs.FS, dir string) ([]Scheme, []error) {
 			errs = append(errs, fmt.Errorf("%s: %w", n, err))
 			continue
 		}
+		if prev, dup := seen[s.ID()]; dup {
+			errs = append(errs, fmt.Errorf("%s: %s already loaded from %s", n, s.ID(), prev))
+			continue
+		}
+		seen[s.ID()] = n
 		out = append(out, s)
 	}
 	return out, errs

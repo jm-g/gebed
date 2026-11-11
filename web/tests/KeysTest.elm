@@ -106,6 +106,10 @@ suite =
                     |> Expect.equal [ Run (RepoStep -1), Run (RepoStep 1), Run (ViewStep -1), Run (ViewStep 1), Run (Zoom 1), Run (Zoom -1), Run ZoomReset, Run (ViewStep 1) ]
         , test "SPC v d opens the agent metrics view" <|
             \_ -> press [ " ", "v" ] "d" |> Expect.equal (Run (Show MetricsView))
+        , test "SPC p r opens the remove-repo composer" <|
+            \_ -> press [ " ", "p" ] "r" |> Expect.equal (Run (Compose RemoveRepo))
+        , test "SPC t opens the theme picker" <|
+            \_ -> press [ " " ] "t" |> Expect.equal (Run PickTheme)
         , test "SPC S opens the sponsor page" <|
             \_ -> press [ " " ] "S" |> Expect.equal (Run Sponsor)
         , test "SPC Backspace opens the list" <|
@@ -113,5 +117,5 @@ suite =
         , test "leader hints list the groups" <|
             \_ ->
                 hints [ " " ]
-                    |> Expect.equal [ ( "v", "view …" ), ( "e", "edit …" ), ( "p", "project …" ), ( "t", "theme …" ), ( "r", "reload" ), ( "⌫", "ALL keys" ), ( "S", "Sponsor <3 (opens in a new tab)" ) ]
+                    |> Expect.equal [ ( "v", "view …" ), ( "e", "edit …" ), ( "p", "project …" ), ( "t", "theme (fuzzy, live)" ), ( "r", "reload" ), ( "⌫", "ALL keys" ), ( "S", "Sponsor <3 (opens in a new tab)" ) ]
         ]

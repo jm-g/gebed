@@ -659,3 +659,54 @@ func TestEditRereadsOnlyTheChangedBead(t *testing.T) {
 		t.Fatalf("x-1 read %d times (want 1), x-2 read %d times (want 2)", reads["x-1"], reads["x-2"])
 	}
 }
+
+func TestAddManyLines(t *testing.T) {
+	h, _ := newServer(t, "")
+	a, b := filepath.Join(t.TempDir(), "alpha"), filepath.Join(t.TempDir(), "beta")
+	for _, d := range []string{a, b} {
+		if err := os.MkdirAll(filepath.Join(d, ".beads"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	body := `{"dir":"  ` + a + `  \n\n` + b + `\n"}`
+	if rec := get(h, "POST", "/api/repos", body); rec.Code != 201 || !strings.Contains(rec.Body.String(), `"name":"alpha"`) {
+		t.Fatalf("two lines: %d %s", rec.Code, rec.Body)
+	}
+	if rec := get(h, "GET", "/api/repos", ""); !strings.Contains(rec.Body.String(), `"name":"beta"`) {
+		t.Errorf("beta not added: %s", rec.Body)
+	}
+	rec := get(h, "POST", "/api/repos", `{"dir":"`+a+`\n/definitely/not/here"}`)
+	if rec.Code != 422 || !strings.Contains(rec.Body.String(), "/definitely/not/here") {
+		t.Errorf("bad line not reported: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestAddNamedLines(t *testing.T) {
+	h, _ := newServer(t, "")
+	a, b := filepath.Join(t.TempDir(), "vic"), filepath.Join(t.TempDir(), "vic")
+	for _, d := range []string{a, b} {
+		if err := os.MkdirAll(filepath.Join(d, ".beads"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if rec := get(h, "POST", "/api/repos", `{"dir":"one:`+a+`\ntwo:`+b+`"}`); rec.Code != 201 {
+		t.Fatalf("named lines: %d %s", rec.Code, rec.Body)
+	}
+	rec := get(h, "GET", "/api/repos", "")
+	if !strings.Contains(rec.Body.String(), `"name":"one"`) || !strings.Contains(rec.Body.String(), `"name":"two"`) {
+		t.Errorf("names not used: %s", rec.Body)
+	}
+}
+
+func TestRemoveRepo(t *testing.T) {
+	h, dir := newServer(t, "")
+	if rec := get(h, "DELETE", "/api/repos/proj", ""); rec.Code != 204 {
+		t.Fatalf("remove: %d %s", rec.Code, rec.Body)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".beads")); err != nil {
+		t.Errorf("remove deleted the directory: %v", err)
+	}
+	if rec := get(h, "DELETE", "/api/repos/proj", ""); rec.Code != 404 {
+		t.Errorf("unknown repo: %d", rec.Code)
+	}
+}

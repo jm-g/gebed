@@ -3,7 +3,9 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -163,12 +165,41 @@ func (a *api) addRepo(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, err)
 		return
 	}
-	repo, err := a.reg.Add(in.Dir)
-	if err != nil {
-		fail(w, http.StatusUnprocessableEntity, err)
+	// one repo per line, as "path" or "name:path"; each is added on its own, and a failing line is reported
+	var first registry.Repo
+	var errs []error
+	for _, line := range strings.Split(in.Dir, "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		name, dir := registry.ParseLine(line)
+		repo, err := a.reg.AddNamed(name, dir)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", dir, err))
+			continue
+		}
+		if first.Name == "" {
+			first = repo
+		}
+	}
+	if len(errs) > 0 {
+		fail(w, http.StatusUnprocessableEntity, errors.Join(errs...))
 		return
 	}
-	reply(w, http.StatusCreated, repo)
+	if first.Name == "" {
+		fail(w, http.StatusBadRequest, errors.New("give one directory per line"))
+		return
+	}
+	reply(w, http.StatusCreated, first)
+}
+
+// removeRepo unregisters a repo; its directory and beads stay on disk.
+func (a *api) removeRepo(w http.ResponseWriter, r *http.Request) {
+	if _, err := a.reg.Remove(r.PathValue("name")); err != nil {
+		fail(w, http.StatusNotFound, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *api) listBeads(w http.ResponseWriter, r *http.Request) {
