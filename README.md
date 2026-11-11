@@ -1,6 +1,6 @@
 # gebed
 
-![gebed: kanban, epics, waterfall zoom to the minute, flow metrics, search and agents, all from the keyboard](docs/demo.gif)
+![gebed: kanban, epics, waterfall zoom to the minute, flow metrics, search and agents, all from the keyboard](demo/demo.gif)
 
 gebed is a small web app for your beads. If you track work with `br` or `bd` in a few different repos, gebed puts all of it in one browser tab: you can see it, edit it, and talk about it there.
 
