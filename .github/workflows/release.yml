@@ -1,0 +1,40 @@
+name: Release binaries
+on:
+  release:
+    types: [created]
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        goos: [linux, darwin]
+        goarch: [amd64, arm64]
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Test
+        run: go test -count=1 -timeout 60s ./...
+      - name: Build a static binary
+        env:
+          VERSION: ${{ github.event.release.tag_name }}
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          name=gebed-${VERSION#v}-${GOOS}-${GOARCH}
+          mkdir -p release
+          go build -trimpath -ldflags "-s -w" -o release/gebed ./cmd/gebed
+          tar -C release -czf "release/$name.tar.gz" gebed
+          (cd release && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256")
+      - uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            release/*.tar.gz
+            release/*.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,36 @@
+name: CI
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: gofmt and go vet report nothing
+        run: |
+          test -z "$(gofmt -l .)"
+          go vet ./...
+      - name: Test
+        run: go test -race -count=1 -timeout 60s ./...
+  elm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: cachix/install-nix-action@v31
+      - name: Format, tests, and the committed bundle matches web/
+        run: nix develop -c sh -c 'cd web && elm-format --validate src tests && elm-test && cd .. && just bundle-fresh'
+  nix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: cachix/install-nix-action@v31
+      - name: Build the flake package (runs the Go tests in its check phase)
+        run: nix build --print-build-logs
+      - name: The built binary prints its usage
+        run: ./result/bin/gebed -h 2>&1 | grep -q addr
