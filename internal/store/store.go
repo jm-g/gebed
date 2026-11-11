@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"gebed/internal/model"
@@ -136,17 +137,31 @@ func (c *CLI) Edges(ctx context.Context, beads []model.Bead) ([]model.Edge, erro
 		}
 		return DecodeEdges(raw)
 	}
+	// br lists one bead per call: run a few at once, keep the order of ids
+	per := make([][]model.Edge, len(ids))
+	errs := make([]error, len(ids))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 8)
+	for i, id := range ids {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer func() { <-sem; wg.Done() }()
+			raw, err := c.Run(ctx, c.Dir, "br", "dep", "list", id, "--json")
+			if err != nil {
+				errs[i] = err
+				return
+			}
+			per[i], errs[i] = DecodeEdges(raw)
+		}()
+	}
+	wg.Wait()
 	var out []model.Edge
-	for _, id := range ids {
-		raw, err := c.Run(ctx, c.Dir, "br", "dep", "list", id, "--json")
-		if err != nil {
-			return nil, err
+	for i := range ids {
+		if errs[i] != nil {
+			return nil, errs[i]
 		}
-		es, err := DecodeEdges(raw)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, es...)
+		out = append(out, per[i]...)
 	}
 	return out, nil
 }

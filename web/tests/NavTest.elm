@@ -23,6 +23,7 @@ bead id status prio =
     , deps = []
     , due = ""
     , estDays = 0
+    , epics = []
     , createdMs = 0
     , updatedMs = 0
     , closedMs = Nothing

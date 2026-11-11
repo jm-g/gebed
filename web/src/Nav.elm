@@ -4,6 +4,7 @@ module Nav exposing (order, step)
 survives a reload and follows a card that changes column.
 -}
 
+import Agile
 import Board
 import Keys exposing (Dir(..), View(..))
 import Schedule
@@ -14,9 +15,21 @@ import Types exposing (Bead)
 -}
 order : Int -> View -> List Bead -> List Bead
 order today view beads =
-    case view of
-        WaterfallView ->
+    case ( view, Agile.columnsFor today view beads ) of
+        ( WaterfallView, _ ) ->
             Schedule.spans today beads |> List.map .bead
+
+        ( _, Just cols ) ->
+            List.concatMap .beads cols
+
+        ( EpicsView, _ ) ->
+            Agile.epicGroups beads |> List.concatMap (\g -> Maybe.map List.singleton g.epic |> Maybe.withDefault [] |> (\e -> e ++ g.children))
+
+        ( MatrixView, _ ) ->
+            List.concatMap (\p -> List.concatMap (\c -> Agile.matrixCell p c beads) (List.range 0 4)) (List.range 0 4)
+
+        ( FlowView, _ ) ->
+            []
 
         _ ->
             Board.ordered beads
@@ -53,11 +66,11 @@ step today view dir sel beads =
             first
 
         Just id ->
-            case view of
-                KanbanView ->
-                    kanban dir id beads
+            case Agile.columnsFor today view beads of
+                Just cols ->
+                    kanban dir id (List.map .beads cols)
 
-                _ ->
+                Nothing ->
                     case dir of
                         Up ->
                             index id flat |> Maybe.andThen (\i -> at (max 0 (i - 1)) flat) |> Maybe.map .id
@@ -69,12 +82,9 @@ step today view dir sel beads =
                             Just id
 
 
-kanban : Dir -> String -> List Bead -> Maybe String
-kanban dir id beads =
+kanban : Dir -> String -> List (List Bead) -> Maybe String
+kanban dir id cols =
     let
-        cols =
-            Board.columns beads |> List.map Tuple.second
-
         pos =
             cols
                 |> List.indexedMap (\c col -> index id col |> Maybe.map (\r -> ( c, r )))

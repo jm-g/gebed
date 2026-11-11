@@ -1,10 +1,12 @@
 module Main exposing (main)
 
+import Agile
 import Board
 import Browser
 import Browser.Dom as Dom
 import Browser.Events
 import Calendar
+import Charts
 import Html exposing (Html, div, li, span, text, textarea, ul)
 import Html.Attributes as A exposing (class, classList)
 import Html.Events exposing (onClick, onInput)
@@ -15,13 +17,16 @@ import Keys exposing (Action(..), ComposeKind(..), Dir(..), Outcome(..), View(..
 import Layout
 import Nav
 import Schedule
+import Scroll
 import Stats
 import Svg
 import Svg.Attributes as SA
 import Task
 import Theme
 import Time
-import Types exposing (Bead, Comment, Delivery, Edge, Repo, Session, statusLabel)
+import Types exposing (Bead, Comment, Delivery, Edge, Hit, Repo, Session, statusLabel)
+import Url
+import Widgets exposing (chips, dueText, prioBadge, statusClass)
 
 
 type Loaded a
@@ -54,6 +59,9 @@ type alias Model =
     , selId : Maybe String
     , today : Int
     , drag : Maybe Drag
+    , finder : Maybe Finder
+    , allKeys : Bool
+    , focus : Maybe String
     , pending : List String
     , help : Bool
     , detail : Maybe Detail
@@ -62,6 +70,15 @@ type alias Model =
     , version : Maybe String
     , flash : Maybe String
     , edges : List Edge
+    }
+
+
+type alias Finder =
+    { fuzzy : Bool
+    , query : String
+    , hits : List Hit
+    , sel : Int
+    , note : String
     }
 
 
@@ -97,11 +114,17 @@ type Msg
     | Submit
     | CancelCompose
     | Mention String
+    | MentionNext
     | GotToday Int
     | Select String
     | DragStart String Float
     | DragMove Float
     | DragEnd
+    | FinderInput String
+    | GotHits String Bool (Result Http.Error (List Hit))
+    | FinderMove Int
+    | FinderOpen
+    | FinderClose
     | NoOp
 
 
@@ -119,6 +142,9 @@ main =
                   , selId = Nothing
                   , today = 0
                   , drag = Nothing
+                  , finder = Nothing
+                  , allKeys = False
+                  , focus = Nothing
                   , pending = []
                   , help = False
                   , detail = Nothing
@@ -157,7 +183,7 @@ keyDecoder : D.Decoder Msg
 keyDecoder =
     D.map5
         (\k c a m tag ->
-            if c || a || m || tag == "TEXTAREA" then
+            if c || a || m || tag == "TEXTAREA" || tag == "INPUT" then
                 Nothing
 
             else
@@ -179,16 +205,20 @@ keyDecoder =
             )
 
 
-composerKeys : D.Decoder Msg
+composerKeys : D.Decoder ( Msg, Bool )
 composerKeys =
     D.map2 Tuple.pair (D.field "key" D.string) (D.field "ctrlKey" D.bool)
         |> D.andThen
             (\( k, ctrl ) ->
                 if k == "Escape" then
-                    D.succeed CancelCompose
+                    D.succeed ( CancelCompose, True )
 
                 else if k == "Enter" && ctrl then
-                    D.succeed Submit
+                    D.succeed ( Submit, True )
+
+                else if k == "Tab" then
+                    -- Tab inserts the next live session as an , and keeps focus here
+                    D.succeed ( MentionNext, True )
 
                 else
                     D.fail "typing"
@@ -401,6 +431,52 @@ update msg model =
         NoOp ->
             ( model, Cmd.none )
 
+        FinderInput q ->
+            case model.finder of
+                Just f ->
+                    ( { model | finder = Just { f | query = q, sel = 0, note = "searching…" } }
+                    , if String.isEmpty (String.trim q) then
+                        Cmd.none
+
+                      else
+                        getHits q f.fuzzy
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        GotHits q fuzzy result ->
+            case model.finder of
+                Just f ->
+                    -- an answer for an older query is dropped
+                    if f.query /= q || f.fuzzy /= fuzzy then
+                        ( model, Cmd.none )
+
+                    else
+                        case result of
+                            Ok hs ->
+                                ( { model | finder = Just { f | hits = hs, note = "nothing found" } }, Cmd.none )
+
+                            Err e ->
+                                ( { model | finder = Just { f | hits = [], note = "search failed: " ++ httpError e } }, Cmd.none )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        FinderMove d ->
+            ( { model | finder = Maybe.map (\f -> { f | sel = clampInt 0 (List.length f.hits - 1) (f.sel + d) }) model.finder }, Cmd.none )
+
+        FinderClose ->
+            ( { model | finder = Nothing }, Cmd.none )
+
+        FinderOpen ->
+            case model.finder |> Maybe.andThen (\f -> List.drop f.sel f.hits |> List.head) of
+                Just h ->
+                    openHit h { model | finder = Nothing }
+
+                Nothing ->
+                    ( { model | finder = Nothing }, Cmd.none )
+
         GotToday d ->
             ( { model | today = d }, Cmd.none )
 
@@ -499,7 +575,12 @@ update msg model =
             else
                 case result of
                     Ok bs ->
-                        ( { model | beads = Ready bs }, Cmd.none )
+                        case model.focus of
+                            Just id ->
+                                openDetail id { model | beads = Ready bs, focus = Nothing }
+
+                            Nothing ->
+                                ( { model | beads = Ready bs }, Cmd.none )
 
                     Err e ->
                         ( { model | beads = Failed (httpError e) }, Cmd.none )
@@ -540,19 +621,30 @@ update msg model =
             ( model, Cmd.none )
 
         Key k ->
-            case Keys.press model.pending k of
-                Wait p ->
-                    ( { model | pending = p }, Cmd.none )
+            if model.allKeys then
+                -- the list of all keys is open: Esc or q closes it, other keys do nothing
+                ( if k == "Escape" || k == "q" || k == "Backspace" then
+                    { model | allKeys = False }
 
-                Cancel ->
-                    if List.isEmpty model.pending && not model.help then
-                        ( { model | detail = Nothing, flash = Nothing }, Cmd.none )
+                  else
+                    model
+                , Cmd.none
+                )
 
-                    else
-                        ( { model | pending = [], help = False }, Cmd.none )
+            else
+                case Keys.press model.pending k of
+                    Wait p ->
+                        ( { model | pending = p }, Cmd.none )
 
-                Run a ->
-                    run a { model | pending = [], flash = Nothing }
+                    Cancel ->
+                        if List.isEmpty model.pending && not model.help then
+                            ( { model | detail = Nothing, flash = Nothing }, Cmd.none )
+
+                        else
+                            ( { model | pending = [], help = False }, Cmd.none )
+
+                    Run a ->
+                        run a { model | pending = [], flash = Nothing }
 
         Draft s ->
             ( { model | compose = Maybe.map (\c -> { c | text = s }) model.compose }, Cmd.none )
@@ -580,6 +672,23 @@ update msg model =
               }
             , focusComposer
             )
+
+        MentionNext ->
+            case model.sessions of
+                [] ->
+                    ( model, Cmd.none )
+
+                ss ->
+                    let
+                        used =
+                            model.compose |> Maybe.map (\c -> List.length (String.indices "@" c.text)) |> Maybe.withDefault 0
+                    in
+                    case List.drop (modBy (List.length ss) used) ss |> List.head of
+                        Just s ->
+                            update (Mention s.nick) model
+
+                        Nothing ->
+                            ( model, Cmd.none )
 
         CancelCompose ->
             ( { model | compose = Nothing }, Cmd.none )
@@ -673,6 +782,12 @@ composeFields c =
         Rename ->
             [ ( "op", E.string "setTitle" ), ( "id", E.string c.target ), ( "title", E.string c.text ) ]
 
+        SetEpic ->
+            [ ( "op", E.string "addDep" ), ( "from", E.string c.target ), ( "on", E.string (String.trim c.text) ), ( "type", E.string "parent-child" ) ]
+
+        ClearEpic ->
+            [ ( "op", E.string "removeDep" ), ( "from", E.string c.target ), ( "on", E.string (String.trim c.text) ) ]
+
         Link ->
             [ ( "op", E.string "addDep" ), ( "from", E.string c.target ), ( "on", E.string (linkRef c.text) ), ( "type", E.string "blocks" ) ]
 
@@ -716,21 +831,46 @@ run action model =
                 _ ->
                     case model.beads of
                         Ready bs ->
-                            ( { model | selId = Nav.step model.today model.view dir (Maybe.map .id (selected model)) bs }, Cmd.none )
+                            let
+                                next =
+                                    { model | selId = Nav.step model.today model.view dir (Maybe.map .id (selected model)) bs }
+                            in
+                            case ( model.detail, next.selId ) of
+                                ( Just _, Just id ) ->
+                                    -- an open discussion follows the selection
+                                    openDetail id next
+
+                                _ ->
+                                    ( next, reveal next.view )
 
                         _ ->
                             ( model, Cmd.none )
 
         Top ->
-            ( { model | selId = visible model |> List.head |> Maybe.map .id }, Cmd.none )
+            ( { model | selId = visible model |> List.head |> Maybe.map .id }, reveal model.view )
 
         Bottom ->
-            ( { model | selId = visible model |> List.reverse |> List.head |> Maybe.map .id }, Cmd.none )
+            ( { model | selId = visible model |> List.reverse |> List.head |> Maybe.map .id }, reveal model.view )
 
         Push dx ->
             case ( model.view, target model ) of
                 ( WaterfallView, Just b ) ->
                     schedule model b (Schedule.slide model.today dx b)
+
+                ( IterationsView, Just b ) ->
+                    schedule model b (Schedule.slide model.today (7 * dx) b)
+
+                ( MatrixView, Just b ) ->
+                    schedule model b (Schedule.stretch model.today dx b)
+
+                ( RoadmapView, Just b ) ->
+                    pushLane dx b model
+
+                ( StoryMapView, Just _ ) ->
+                    ( { model | flash = Just "the epic is a tag: SPC e e adds it, SPC e x removes it" }, Cmd.none )
+
+                ( EpicsView, Just _ ) ->
+                    ( { model | flash = Just "the epic is a tag: SPC e e adds it, SPC e x removes it" }, Cmd.none )
 
                 ( _, Just b ) ->
                     pushStatus dx b model
@@ -756,11 +896,38 @@ run action model =
 
         Stretch d ->
             case ( model.view, target model ) of
+                ( MatrixView, Just b ) ->
+                    schedule model b (Schedule.stretch model.today d b)
+
                 ( WaterfallView, Just b ) ->
                     schedule model b (Schedule.stretch model.today d b)
 
                 _ ->
                     ( { model | flash = Just "< and > resize a task on the waterfall (SPC v w)" }, Cmd.none )
+
+        Find fuzzy ->
+            ( { model | finder = Just { fuzzy = fuzzy, query = "", hits = [], sel = 0, note = "" }, pending = [] }, focusFinder )
+
+        RepoStep d ->
+            stepRepo d model
+
+        NextView ->
+            run (Show (nextView model.view)) model
+
+        ShowAllKeys ->
+            ( { model | allKeys = True, pending = [] }, Cmd.none )
+
+        Scroll dir ->
+            ( model
+            , scrollPane
+                (if model.detail /= Nothing then
+                    "detail"
+
+                 else
+                    "main"
+                )
+                dir
+            )
 
         Show v ->
             ( { model | view = v }
@@ -834,6 +1001,32 @@ run action model =
 
         Reopen ->
             edit model (\b -> [ ( "op", E.string "reopen" ), ( "id", E.string b.id ) ])
+
+
+{-| H and L on the roadmap: Now is in progress, Next is open, Later is deferred.
+-}
+pushLane : Int -> Bead -> Model -> ( Model, Cmd Msg )
+pushLane dx b model =
+    let
+        cols =
+            case model.beads of
+                Ready bs ->
+                    Agile.roadmapCols model.today bs
+
+                _ ->
+                    []
+
+        here =
+            cols |> List.indexedMap Tuple.pair |> List.filter (\( _, c ) -> List.any (\x -> x.id == b.id) c.beads) |> List.head |> Maybe.map Tuple.first |> Maybe.withDefault 0
+
+        to =
+            clampInt 0 2 (here + dx)
+    in
+    if to == here then
+        ( { model | flash = Just "already in the last lane" }, Cmd.none )
+
+    else
+        edit model (\_ -> [ ( "op", E.string "setStatus" ), ( "id", E.string b.id ), ( "status", E.string (List.drop to [ "in_progress", "open", "deferred" ] |> List.head |> Maybe.withDefault "open") ) ])
 
 
 {-| H and L: move the card to the neighbour column. Out of closed it reopens first, so the
@@ -981,11 +1174,13 @@ view model =
         [ viewBar model
         , div [ class "app" ]
             [ div [ class "sidebar" ] (loaded model.repos (viewRepos model.current))
-            , div [ class "main" ] (viewMain model)
+            , div [ class "main", A.id "main" ] (viewMain model)
             , viewDetail model
             ]
         , viewFlash model
         , viewPopup model
+        , viewFinder model
+        , viewAllKeys model
         ]
 
 
@@ -1063,14 +1258,28 @@ viewBodyWith model beads =
         ListView ->
             [ viewList sel beads ]
 
-        KanbanView ->
-            [ viewKanban sel beads ]
-
         GraphView ->
             [ viewGraph sel beads model.edges ]
 
         WaterfallView ->
             [ viewWaterfall model sel beads ]
+
+        EpicsView ->
+            [ Charts.viewEpics Select sel (Agile.epicGroups beads) ]
+
+        FlowView ->
+            [ Charts.viewFlow (Agile.flow model.today beads) ]
+
+        MatrixView ->
+            [ Charts.viewMatrix Select sel beads ]
+
+        _ ->
+            case Agile.columnsFor model.today model.view beads of
+                Just cols ->
+                    [ Charts.viewBoard Select sel cols ]
+
+                Nothing ->
+                    []
 
 
 viewDetail : Model -> Html Msg
@@ -1085,7 +1294,7 @@ viewDetail model =
                     text ""
 
         Just d ->
-            div [ class "detail" ]
+            div [ class "detail", A.id "detail" ]
                 (loaded d.bead (viewBeadHead model)
                     ++ [ div [ class "discussion" ] (loaded d.comments viewComments) ]
                     ++ [ viewComposerOrHint model ]
@@ -1109,6 +1318,11 @@ viewBeadHead _ b =
                 ]
             )
         ]
+    , if List.isEmpty b.epics then
+        text ""
+
+      else
+        div [ class "dmeta" ] [ chips b ]
     , if List.isEmpty b.labels then
         text ""
 
@@ -1173,6 +1387,12 @@ viewComposer model c =
                 AddRepo ->
                     "add a repo: full path of a directory that has a .beads folder"
 
+                SetEpic ->
+                    "put " ++ c.target ++ " in an epic: type the epic id"
+
+                ClearEpic ->
+                    "take " ++ c.target ++ " out of an epic: type the epic id"
+
                 Link ->
                     c.target ++ " depends on … (bead id, or repo:id for another repo)"
 
@@ -1183,13 +1403,13 @@ viewComposer model c =
                     "remove a label from " ++ c.target
     in
     div [ class "composer" ]
-        [ div [ class "dim" ] [ text (label ++ "   (Ctrl+Enter send, Esc cancel)") ]
+        [ div [ class "dim" ] [ text (label ++ "   (Ctrl+Enter send, Tab mention a session, Esc cancel)") ]
         , textarea
             [ A.id "composer"
             , A.value c.text
             , A.rows 4
             , onInput Draft
-            , Html.Events.on "keydown" composerKeys
+            , Html.Events.preventDefaultOn "keydown" composerKeys
             ]
             []
         , if List.isEmpty model.sessions || c.kind == NewBead || c.kind == Rename then
@@ -1403,7 +1623,10 @@ viewBar model =
                     []
 
         ( mode, modeClass ) =
-            if model.compose /= Nothing then
+            if model.finder /= Nothing then
+                ( "-FIND-", "insert" )
+
+            else if model.compose /= Nothing then
                 ( "-INSERT-", "insert" )
 
             else if model.drag /= Nothing then
@@ -1434,145 +1657,12 @@ viewBar model =
                 (\( k, label ) -> span [ class "hint" ] [ span [ class "key" ] [ text k ], text (" " ++ label) ])
                 (Keys.barHints model.view)
             )
+        , Html.a [ class "sponsor", A.href "https://github.com/sponsors/vic", A.target "_blank", A.rel "noopener noreferrer" ] [ text "Sponsor <3" ]
         ]
 
 
 
 -- BEADS: SHARED PIECES
-
-
-statusClass : Types.Status -> String
-statusClass s =
-    case s of
-        Types.Open ->
-            "open"
-
-        Types.InProgress ->
-            "doing"
-
-        Types.Blocked ->
-            "blocked"
-
-        Types.Closed ->
-            "done"
-
-        _ ->
-            "other"
-
-
-{-| Labels keep one color each: the same word always gets the same hue.
--}
-labelChip : String -> Html Msg
-labelChip l =
-    span [ class ("chip lc" ++ String.fromInt (modBy 7 (List.sum (List.map Char.toCode (String.toList l))))) ] [ text l ]
-
-
-prioBadge : Bead -> Html Msg
-prioBadge b =
-    span [ class ("prio p" ++ String.fromInt b.priority), A.title (prioName b.priority) ] [ text ("P" ++ String.fromInt b.priority) ]
-
-
-prioName : Int -> String
-prioName p =
-    case p of
-        0 ->
-            "critical"
-
-        1 ->
-            "high"
-
-        2 ->
-            "medium"
-
-        3 ->
-            "low"
-
-        _ ->
-            "backlog"
-
-
-dueText : Bead -> String
-dueText b =
-    if String.isEmpty b.due then
-        ""
-
-    else
-        String.dropLeft 5 b.due
-
-
-
--- KANBAN
-
-
-viewKanban : Maybe String -> List Bead -> Html Msg
-viewKanban sel beads =
-    div [ class "kanban" ] (List.map (column sel) (Board.columns beads))
-
-
-column : Maybe String -> ( Types.Status, List Bead ) -> Html Msg
-column sel ( status, beads ) =
-    div [ class ("col st-" ++ statusClass status) ]
-        [ div [ class "colhead" ]
-            [ span [ class "colname" ] [ text (statusLabel status) ]
-            , span [ class "colcount" ] [ text (String.fromInt (List.length beads)) ]
-            ]
-        , div [ class "cards" ]
-            (if List.isEmpty beads then
-                [ div [ class "colempty" ] [ text "nothing here — H and L move a card in" ] ]
-
-             else
-                List.map (card sel) beads
-            )
-        ]
-
-
-card : Maybe String -> Bead -> Html Msg
-card sel b =
-    div [ classList [ ( "card", True ), ( "current", sel == Just b.id ) ], onClick (Select b.id) ]
-        [ div [ class "cardtop" ]
-            [ span [ class "id" ] [ text b.id ]
-            , prioBadge b
-            , span [ class "kind" ] [ text b.kind ]
-            ]
-        , div [ class "ctitle" ] [ text b.title ]
-        , if List.isEmpty b.labels then
-            text ""
-
-          else
-            div [ class "chips" ] (List.map labelChip b.labels)
-        , div [ class "cardfoot" ]
-            [ span []
-                [ text
-                    (if String.isEmpty b.assignee then
-                        ""
-
-                     else
-                        "@" ++ b.assignee
-                    )
-                ]
-            , span []
-                [ text
-                    (if String.isEmpty b.due then
-                        ""
-
-                     else
-                        "due " ++ dueText b
-                    )
-                ]
-            , span []
-                [ text
-                    (if b.depCount > 0 then
-                        "⛓ " ++ String.fromInt b.depCount
-
-                     else
-                        ""
-                    )
-                ]
-            ]
-        ]
-
-
-
 -- LIST
 
 
@@ -1594,12 +1684,12 @@ viewList sel beads =
 
 listRow : Maybe String -> Bead -> Html Msg
 listRow sel b =
-    div [ classList [ ( "lrow", True ), ( "current", sel == Just b.id ) ], onClick (Select b.id) ]
+    div (selMark sel b.id ++ [ classList [ ( "lrow", True ), ( "current", sel == Just b.id ) ], onClick (Select b.id) ])
         [ prioBadge b
         , span [ class "id" ] [ text b.id ]
         , span [ class ("status st-" ++ statusClass b.status) ] [ text (statusLabel b.status) ]
         , span [ class "ltitle" ] [ text b.title, span [ class "kind" ] [ text ("  " ++ b.kind) ] ]
-        , span [ class "chips" ] (List.map labelChip b.labels)
+        , chips b
         , span [ class "dim" ]
             [ text
                 (if String.isEmpty b.assignee then
@@ -1707,7 +1797,7 @@ viewWaterfall model sel beads =
                 [ text s.bead.title ]
 
         row s =
-            div [ classList [ ( "wrow", True ), ( "current", sel == Just s.bead.id ) ] ]
+            div (selMark sel s.bead.id ++ [ classList [ ( "wrow", True ), ( "current", sel == Just s.bead.id ) ] ])
                 [ span [ class "wlabel", onClick (Select s.bead.id) ]
                     [ span [ class "id" ] [ text s.bead.id ], text (" " ++ s.bead.title) ]
                 , div [ class "wtrack", A.style "width" (String.fromInt total ++ "px") ]
@@ -1726,3 +1816,294 @@ viewWaterfall model sel beads =
             ]
             :: List.map row ss
         )
+
+
+{-| The selected card or row carries this id, so `reveal` can find it.
+-}
+selMark : Maybe String -> String -> List (Html.Attribute Msg)
+selMark sel id =
+    if sel == Just id then
+        [ A.id "sel" ]
+
+    else
+        []
+
+
+{-| Scroll the pane just enough to show the selected card or row. The waterfall
+scrolls in its own box, under a sticky ruler of 46px, and only vertically.
+-}
+reveal : View -> Cmd Msg
+reveal which =
+    let
+        ( container, pad ) =
+            case which of
+                WaterfallView ->
+                    ( "wf", 46 )
+
+                _ ->
+                    ( "main", 0 )
+    in
+    Task.map3 (\v box el -> ( v, box, el ))
+        (Dom.getViewportOf container)
+        (Dom.getElement container)
+        (Dom.getElement "sel")
+        |> Task.andThen
+            (\( v, box, el ) ->
+                let
+                    -- where the element sits inside the scrolled content
+                    y =
+                        el.element.y - box.element.y + v.viewport.y
+
+                    x =
+                        el.element.x - box.element.x + v.viewport.x
+                in
+                Dom.setViewportOf container
+                    (if which == WaterfallView then
+                        v.viewport.x
+
+                     else
+                        Scroll.into v.viewport.x 0 x el.element.width v.viewport.width 16
+                    )
+                    (Scroll.into v.viewport.y pad y el.element.height v.viewport.height 16)
+            )
+        |> Task.attempt (\_ -> NoOp)
+
+
+
+-- FINDER
+
+
+getHits : String -> Bool -> Cmd Msg
+getHits query fuzzy =
+    Http.get
+        { url =
+            "/api/search?mode="
+                ++ (if fuzzy then
+                        "fuzzy"
+
+                    else
+                        "exact"
+                   )
+                ++ "&q="
+                ++ Url.percentEncode query
+        , expect = Http.expectJson (GotHits query fuzzy) (D.field "hits" (D.list Types.hitDecoder))
+        }
+
+
+finderKeys : D.Decoder Msg
+finderKeys =
+    D.map2 Tuple.pair (D.field "key" D.string) (D.field "ctrlKey" D.bool)
+        |> D.andThen
+            (\( k, ctrl ) ->
+                case ( k, ctrl ) of
+                    ( "Escape", _ ) ->
+                        D.succeed FinderClose
+
+                    ( "Enter", _ ) ->
+                        D.succeed FinderOpen
+
+                    ( "ArrowDown", _ ) ->
+                        D.succeed (FinderMove 1)
+
+                    ( "ArrowUp", _ ) ->
+                        D.succeed (FinderMove -1)
+
+                    ( "n", True ) ->
+                        D.succeed (FinderMove 1)
+
+                    ( "p", True ) ->
+                        D.succeed (FinderMove -1)
+
+                    _ ->
+                        D.fail "typing"
+            )
+
+
+viewFinder : Model -> Html Msg
+viewFinder model =
+    case model.finder of
+        Nothing ->
+            text ""
+
+        Just f ->
+            let
+                multi =
+                    case model.repos of
+                        Ready rs ->
+                            List.length rs > 1
+
+                        _ ->
+                            False
+
+                row i h =
+                    div [ classList [ ( "hit", True ), ( "current", i == f.sel ) ], onClick (Select h.id) ]
+                        [ span [ class "hitid" ]
+                            [ text
+                                ((if multi then
+                                    h.repo ++ " "
+
+                                  else
+                                    ""
+                                 )
+                                    ++ h.id
+                                )
+                            ]
+                        , span [ class "hittitle" ] [ text h.title ]
+                        , span [ class "hitfield" ] [ text h.field ]
+                        , span [ class "hitsnip dim" ] [ text h.snippet ]
+                        ]
+            in
+            div [ class "finder" ]
+                [ div [ class "finderbox" ]
+                    [ div [ class "findhead" ]
+                        [ span [ class "findmode" ]
+                            [ text
+                                (if f.fuzzy then
+                                    "FIND (fuzzy)"
+
+                                 else
+                                    "SEARCH (exact)"
+                                )
+                            ]
+                        , span [ class "dim" ] [ text "id, title, text, comments, labels, epics, dates" ]
+                        ]
+                    , Html.input
+                        [ A.id "finder"
+                        , A.value f.query
+                        , A.placeholder "type to search"
+                        , A.autocomplete False
+                        , onInput FinderInput
+                        , Html.Events.on "keydown" finderKeys
+                        ]
+                        []
+                    , div [ class "hits" ]
+                        (if List.isEmpty f.hits then
+                            [ div [ class "dim hitnone" ]
+                                [ text
+                                    (if String.isEmpty (String.trim f.query) then
+                                        "start typing"
+
+                                     else
+                                        f.note
+                                    )
+                                ]
+                            ]
+
+                         else
+                            List.indexedMap row f.hits
+                        )
+                    , div [ class "dim findfoot" ] [ text "↑ ↓ or Ctrl+p Ctrl+n move · Enter open · Esc close" ]
+                    ]
+                ]
+
+
+{-| Go to a search hit: switch repo if it is in another one, select the bead and
+open its discussion.
+-}
+openHit : Hit -> Model -> ( Model, Cmd Msg )
+openHit h model =
+    if model.current == Just h.repo then
+        openDetail h.id { model | selId = Just h.id }
+
+    else
+        ( { model | current = Just h.repo, beads = Loading, selId = Just h.id, detail = Nothing, version = Nothing, focus = Just h.id }
+        , Cmd.batch [ getBeads h.repo, getEdges h.repo ]
+        )
+
+
+openDetail : String -> Model -> ( Model, Cmd Msg )
+openDetail id model =
+    case ( model.current, model.beads ) of
+        ( Just repo, Ready bs ) ->
+            case List.filter (\b -> b.id == id) bs |> List.head of
+                Just b ->
+                    ( { model | detail = Just { id = id, bead = Ready b, comments = Loading } }
+                    , Cmd.batch [ getBead repo id, getComments repo id, reveal model.view ]
+                    )
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        _ ->
+            ( model, Cmd.none )
+
+
+focusFinder : Cmd Msg
+focusFinder =
+    Dom.focus "finder" |> Task.attempt (\_ -> NoOp)
+
+
+viewOrder : List View
+viewOrder =
+    [ KanbanView, ListView, EpicsView, StoryMapView, RoadmapView, IterationsView, WaterfallView, GraphView, FlowView, MatrixView ]
+
+
+{-| Tab: the next view in the order of viewOrder, wrapping around.
+-}
+nextView : View -> View
+nextView v =
+    let
+        i =
+            viewOrder |> List.indexedMap Tuple.pair |> List.filter (\( _, x ) -> x == v) |> List.head |> Maybe.map Tuple.first |> Maybe.withDefault 0
+    in
+    viewOrder |> List.drop (modBy (List.length viewOrder) (i + 1)) |> List.head |> Maybe.withDefault KanbanView
+
+
+{-| -}
+stepRepo : Int -> Model -> ( Model, Cmd Msg )
+stepRepo d model =
+    case model.repos of
+        Ready rs ->
+            let
+                names =
+                    List.map .name rs
+
+                i =
+                    names |> List.indexedMap Tuple.pair |> List.filter (\( _, n ) -> Just n == model.current) |> List.head |> Maybe.map Tuple.first |> Maybe.withDefault 0
+            in
+            case List.drop (modBy (max 1 (List.length names)) (i + d)) names |> List.head of
+                Just name ->
+                    update (Pick name) model
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        _ ->
+            ( model, Cmd.none )
+
+
+{-| d and u: half a page down or up in the open discussion, else in the main pane.
+-}
+scrollPane : String -> Int -> Cmd Msg
+scrollPane id dir =
+    Dom.getViewportOf id
+        |> Task.andThen (\v -> Dom.setViewportOf id v.viewport.x (max 0 (v.viewport.y + toFloat dir * v.viewport.height / 2)))
+        |> Task.attempt (\_ -> NoOp)
+
+
+{-| SPC Backspace: every key that does something from normal mode.
+-}
+viewAllKeys : Model -> Html Msg
+viewAllKeys model =
+    if not model.allKeys then
+        text ""
+
+    else
+        div [ class "finder" ]
+            [ div [ class "finderbox wide" ]
+                [ div [ class "findhead" ]
+                    [ span [ class "findmode" ] [ text "ALL KEYS" ]
+                    , span [ class "dim" ] [ text (String.fromInt (List.length Keys.allKeys) ++ " keys from normal mode · Esc closes") ]
+                    ]
+                , div [ class "allkeys" ]
+                    (List.map
+                        (\( path, label ) ->
+                            div [ class "keyrow" ]
+                                [ span [ class "keys" ] [ text (String.join " " (List.map Keys.keyName path)) ]
+                                , span [] [ text label ]
+                                ]
+                        )
+                        Keys.allKeys
+                    )
+                ]
+            ]

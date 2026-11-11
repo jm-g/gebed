@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -108,22 +109,18 @@ type edgeJSON struct {
 }
 
 func (a *api) listEdges(w http.ResponseWriter, r *http.Request) {
-	s, ok := a.open(w, r)
+	repo, ok := a.reg.Find(r.PathValue("name"))
 	if !ok {
+		fail(w, http.StatusNotFound, errors.New("unknown repo"))
 		return
 	}
-	bs, err := s.List(r.Context())
+	sn, err := a.snapshot(r.Context(), repo)
 	if err != nil {
 		fail(w, http.StatusBadGateway, err)
 		return
 	}
-	es, err := s.Edges(r.Context(), bs)
-	if err != nil {
-		fail(w, http.StatusBadGateway, err)
-		return
-	}
-	out := make([]edgeJSON, 0, len(es))
-	for _, e := range es {
+	out := make([]edgeJSON, 0, len(sn.edges))
+	for _, e := range sn.edges {
 		out = append(out, edgeJSON{e.From.String(), e.To.Project, e.To.ID.String(), e.Type.String()})
 	}
 	reply(w, http.StatusOK, out)

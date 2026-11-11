@@ -121,6 +121,16 @@ var tools = []tool{
 		func(a args) call {
 			return op("addDep", a, map[string]any{"from": a.s("from"), "on": a.s("on"), "type": a.s("type")})
 		}},
+	{"gebed_remove_dep", "Remove the dependency of one bead on another. This is also how a bead leaves an epic.",
+		[]prop{repo,
+			{"from", "string", "The bead that depends on the other.", true},
+			{"on", "string", "The bead it depends on: an id, or external:<repo>:<id>.", true}},
+		func(a args) call { return op("removeDep", a, map[string]any{"from": a.s("from"), "on": a.s("on")}) }},
+	{"gebed_search", "Find beads in every repo by id, title, text, comments, labels, epic and dates. mode fuzzy matches letters in order; mode exact needs every word as written.",
+		[]prop{{"query", "string", "What to look for.", true}, {"mode", "string", "fuzzy or exact.", true}},
+		func(a args) call {
+			return call{"GET", "/api/search?mode=" + url.QueryEscape(a.s("mode")) + "&q=" + url.QueryEscape(a.s("query")), nil}
+		}},
 	{"gebed_comment", "Add a comment to a bead's discussion. An @name in the text sends the comment to the live session with that name; the answer lists who received it.",
 		[]prop{repo, beadID, {"text", "string", "The comment. Mention an implementer with @name.", true}},
 		func(a args) call { return op("addComment", a, map[string]any{"id": a.s("id"), "text": a.s("text")}) }},

@@ -354,3 +354,79 @@ func TestSetScheduleOp(t *testing.T) {
 		}
 	}
 }
+
+// searchServer has an epic e-1 with one child c-1 (parent-child), a description
+// and a comment only `show` and `comments` return.
+func searchServer(t *testing.T) http.Handler {
+	t.Helper()
+	reg, _ := registry.Load(filepath.Join(t.TempDir(), "repos.json"))
+	dir := filepath.Join(t.TempDir(), "proj")
+	if err := os.MkdirAll(filepath.Join(dir, ".beads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reg.Add(dir); err != nil {
+		t.Fatal(err)
+	}
+	row := func(id, title, kind string, deps int) string {
+		return `{"id":"` + id + `","title":"` + title + `","status":"open","priority":1,"issue_type":"` + kind + `","dependency_count":` + strconv.Itoa(deps) + `,"created_at":"2026-10-02T10:00:00Z","updated_at":"2026-10-02T10:00:00Z","due_at":"2026-11-20T15:00:00Z"}`
+	}
+	return New(reg, func(_ context.Context, _, _ string, args ...string) ([]byte, error) {
+		switch args[0] {
+		case "list":
+			return []byte(`{"issues":[` + row("e-1", "Auth epic", "epic", 0) + `,` + row("c-1", "Fix token refresh race", "task", 1) + `]}`), nil
+		case "dep":
+			return []byte(`[{"issue_id":"c-1","depends_on_id":"e-1","type":"parent-child"}]`), nil
+		case "show":
+			if args[1] == "c-1" {
+				return []byte(`[` + strings.TrimSuffix(row("c-1", "Fix token refresh race", "task", 1), "}") + `,"description":"Sessions expire during a refresh"}]`), nil
+			}
+			return []byte(`[` + row("e-1", "Auth epic", "epic", 0) + `]`), nil
+		case "comments":
+			if args[1] == "c-1" {
+				return []byte(`[{"id":1,"issue_id":"c-1","author":"ana","text":"the needle is in the cache","created_at":"2026-11-02T10:00:00Z"}]`), nil
+			}
+			return []byte(`[]`), nil
+		}
+		return []byte(`{}`), nil
+	}, theme.Builtin, fakePeers{}, "vic")
+}
+
+func TestEpicsAreTagsOnTheirChildren(t *testing.T) {
+	rec := get(searchServer(t), "GET", "/api/repos/proj/beads", "")
+	if !strings.Contains(rec.Body.String(), `"epics":[{"id":"e-1","title":"Auth epic"}]`) {
+		t.Fatalf("child has no epic tag: %s", rec.Body)
+	}
+	if strings.Count(rec.Body.String(), `"epics":[]`) != 1 { // the epic itself has none
+		t.Errorf("epic carries an epic tag: %s", rec.Body)
+	}
+}
+
+func TestSearchAPI(t *testing.T) {
+	h := searchServer(t)
+	hitIDs := func(path string) string {
+		rec := get(h, "GET", path, "")
+		if rec.Code != 200 {
+			t.Fatalf("%s: %d %s", path, rec.Code, rec.Body)
+		}
+		return rec.Body.String()
+	}
+	for name, tc := range map[string]struct{ path, field string }{
+		"comment text":          {"/api/search?mode=exact&q=needle", `"field":"comment"`},
+		"description text":      {"/api/search?mode=exact&q=expire", `"field":"description"`},
+		"date":                  {"/api/search?mode=exact&q=2026-11-20", `"field":"due"`},
+		"epic name":             {"/api/search?mode=exact&q=auth", `"id":"c-1"`},
+		"fuzzy title":           {"/api/search?mode=fuzzy&q=tknrfsh", `"id":"c-1"`},
+		"fuzzy finds a comment": {"/api/search?mode=fuzzy&q=ndlcache", `"field":"comment"`},
+	} {
+		if body := hitIDs(tc.path); !strings.Contains(body, tc.field) {
+			t.Errorf("%s: %s", name, body)
+		}
+	}
+	// exact is not fuzzy
+	if body := hitIDs("/api/search?mode=exact&q=tknrfsh"); strings.Contains(body, `"id":"c-1"`) {
+		t.Errorf("exact search matched fuzzily: %s", body)
+	}
+	if rec := get(h, "GET", "/api/search?mode=bogus&q=x", ""); rec.Code != 400 {
+		t.Errorf("bad mode: %d", rec.Code)
+	}
+}

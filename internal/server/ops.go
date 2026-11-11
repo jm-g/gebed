@@ -87,6 +87,13 @@ func parseOp(o opJSON, user string) (store.Op, error) {
 			return nil, err
 		}
 		return store.Reopen{ID: id}, nil
+	case "removeDep":
+		from, err1 := model.ParseID(o.From)
+		on, err2 := model.ParseRef(o.On)
+		if err := firstErr(err1, err2); err != nil {
+			return nil, err
+		}
+		return store.RemoveDep{From: from, On: on}, nil
 	case "setSchedule":
 		d, err := model.ParseDate(o.Due)
 		n, err2 := model.ParseDays(o.Days)
@@ -158,4 +165,4 @@ func (a *api) applyOp(w http.ResponseWriter, r *http.Request) {
 }
 
 // OpNames lists every op parseOp accepts; the MCP server must expose each one.
-var OpNames = []string{"create", "setTitle", "setStatus", "setPriority", "addLabel", "removeLabel", "close", "reopen", "addDep", "addComment", "setSchedule"}
+var OpNames = []string{"create", "setTitle", "setStatus", "setPriority", "addLabel", "removeLabel", "close", "reopen", "addDep", "addComment", "setSchedule", "removeDep"}

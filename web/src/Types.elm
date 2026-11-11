@@ -4,6 +4,8 @@ module Types exposing
     , Delivery
     , Dep
     , Edge
+    , EpicRef
+    , Hit
     , Repo
     , Session
     , Status(..)
@@ -11,6 +13,7 @@ module Types exposing
     , commentDecoder
     , deliveryDecoder
     , edgeDecoder
+    , hitDecoder
     , repoDecoder
     , sessionDecoder
     , statusLabel
@@ -106,6 +109,12 @@ type alias Dep =
     }
 
 
+type alias EpicRef =
+    { id : String
+    , title : String
+    }
+
+
 type alias Bead =
     { id : String
     , title : String
@@ -121,6 +130,7 @@ type alias Bead =
     , deps : List Dep
     , due : String
     , estDays : Int
+    , epics : List EpicRef
     , createdMs : Int
     , updatedMs : Int
     , closedMs : Maybe Int
@@ -162,6 +172,7 @@ beadDecoder =
         |> andMap (D.field "deps" (D.list depDecoder))
         |> andMap (D.field "due" D.string)
         |> andMap (D.field "estDays" D.int)
+        |> andMap (D.field "epics" (D.list epicRefDecoder))
         |> andMap (D.field "createdMs" D.int)
         |> andMap (D.field "updatedMs" D.int)
         |> andMap (D.field "closedMs" (D.nullable D.int))
@@ -234,3 +245,31 @@ edgeDecoder =
         (D.field "toRepo" D.string)
         (D.field "to" D.string)
         (D.field "type" D.string)
+
+
+epicRefDecoder : Decoder EpicRef
+epicRefDecoder =
+    D.map2 EpicRef (D.field "id" D.string) (D.field "title" D.string)
+
+
+{-| One search result: which bead, which field matched, and the text around it.
+-}
+type alias Hit =
+    { repo : String
+    , id : String
+    , title : String
+    , status : String
+    , field : String
+    , snippet : String
+    }
+
+
+hitDecoder : Decoder Hit
+hitDecoder =
+    D.map6 Hit
+        (D.field "repo" D.string)
+        (D.field "id" D.string)
+        (D.field "title" D.string)
+        (D.field "status" D.string)
+        (D.field "field" D.string)
+        (D.field "snippet" D.string)

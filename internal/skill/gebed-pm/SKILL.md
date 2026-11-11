@@ -40,6 +40,7 @@ Read:
 | `gebed_links` | Every cross-repo link, each end resolved to title and status |
 | `gebed_sessions` | Live agent sessions that can receive a mention |
 | `gebed_themes` | Color schemes of the web UI |
+| `gebed_search` | Find beads in every repo by id, title, text, comments, labels, epic and dates. `mode`: `fuzzy` (letters in order) or `exact` (every word as written) |
 
 Change:
 
@@ -56,11 +57,16 @@ Change:
 | `gebed_close` | End a bead, with a reason that cites the evidence |
 | `gebed_reopen` | Reopen a closed bead |
 | `gebed_add_dep` | `from` depends on `on`. Use `external:<repo>:<id>` for a bead of another repo |
+| `gebed_remove_dep` | Remove a dependency; also how a bead leaves an epic |
 | `gebed_comment` | Add to the discussion. An `@name` in the text sends it to that live session |
 
 A tool error is a normal result with the reason in it. Read the reason and fix the call. Do not repeat the same call.
 
 The web UI also keeps a view, a theme and a selection. Those are the viewer's own state, so no tool changes them.
+
+## Epics
+
+An epic is a bead of kind `epic`. A bead belongs to it when it has a `parent-child` dependency on it: `gebed_add_dep` with `type` `parent-child` and `on` the epic. gebed shows the epic as a tag on every child and draws epic views from it. To move a bead to another epic, `gebed_remove_dep` the old one and add the new one.
 
 ## Workflow
 

@@ -4,8 +4,10 @@ module Keys exposing
     , Dir(..)
     , Outcome(..)
     , View(..)
+    , allKeys
     , barHints
     , hints
+    , keyName
     , press
     , viewName
     )
@@ -19,6 +21,12 @@ type View
     | KanbanView
     | GraphView
     | WaterfallView
+    | EpicsView
+    | StoryMapView
+    | RoadmapView
+    | IterationsView
+    | FlowView
+    | MatrixView
 
 
 type Dir
@@ -35,6 +43,8 @@ type ComposeKind
     | Rename
     | Link
     | AddRepo
+    | SetEpic
+    | ClearEpic
     | AddLabel
     | RemoveLabel
 
@@ -46,6 +56,11 @@ type Action
     | Push Int
     | Bump Int
     | Stretch Int
+    | Find Bool
+    | RepoStep Int
+    | NextView
+    | Scroll Int
+    | ShowAllKeys
     | Show View
     | NextTheme
     | Reload
@@ -87,7 +102,14 @@ group key label bindings =
 
 root : List Binding
 root =
-    [ leaf "h" "left" (Move Left)
+    [ leaf "f" "find (fuzzy)" (Find True)
+    , leaf "s" "search (exact)" (Find False)
+    , leaf "d" "scroll down" (Scroll 1)
+    , leaf "u" "scroll up" (Scroll -1)
+    , leaf "[" "previous repo" (RepoStep -1)
+    , leaf "]" "next repo" (RepoStep 1)
+    , leaf "Tab" "next view" NextView
+    , leaf "h" "left" (Move Left)
     , leaf "j" "down" (Move Down)
     , leaf "k" "up" (Move Up)
     , leaf "l" "right" (Move Right)
@@ -112,6 +134,12 @@ root =
             , leaf "k" "kanban" (Show KanbanView)
             , leaf "g" "dependency graph" (Show GraphView)
             , leaf "w" "waterfall" (Show WaterfallView)
+            , leaf "e" "epics" (Show EpicsView)
+            , leaf "m" "story map" (Show StoryMapView)
+            , leaf "r" "roadmap" (Show RoadmapView)
+            , leaf "i" "iterations" (Show IterationsView)
+            , leaf "f" "flow metrics" (Show FlowView)
+            , leaf "x" "impact/effort matrix" (Show MatrixView)
             ]
         , group "e"
             "edit"
@@ -128,6 +156,8 @@ root =
                 (List.map (\n -> leaf (String.fromInt n) ("P" ++ String.fromInt n) (SetPriority n)) [ 0, 1, 2, 3, 4 ])
             , leaf "o" "reopen" Reopen
             , leaf "t" "rename title" (Compose Rename)
+            , leaf "e" "add to epic (id)" (Compose SetEpic)
+            , leaf "x" "leave epic (id)" (Compose ClearEpic)
             , leaf "l" "link to bead (id or repo:id)" (Compose Link)
             , leaf "+" "add label" (Compose AddLabel)
             , leaf "-" "remove label" (Compose RemoveLabel)
@@ -137,6 +167,7 @@ root =
             [ leaf "a" "add repo (directory with .beads)" (Compose AddRepo) ]
         , group "t" "theme" [ leaf "n" "next theme" NextTheme ]
         , leaf "r" "reload" Reload
+        , leaf "Backspace" "ALL keys" ShowAllKeys
         ]
     ]
 
@@ -203,11 +234,18 @@ hints pending =
 
 keyName : String -> String
 keyName k =
-    if k == " " then
-        "SPC"
+    case k of
+        " " ->
+            "SPC"
 
-    else
-        k
+        "Backspace" ->
+            "⌫"
+
+        "Enter" ->
+            "⏎"
+
+        _ ->
+            k
 
 
 prefixMark : Entry -> String
@@ -235,6 +273,24 @@ viewName v =
         WaterfallView ->
             "WATERFALL"
 
+        EpicsView ->
+            "EPICS"
+
+        StoryMapView ->
+            "STORY MAP"
+
+        RoadmapView ->
+            "ROADMAP"
+
+        IterationsView ->
+            "ITERATIONS"
+
+        FlowView ->
+            "FLOW"
+
+        MatrixView ->
+            "MATRIX"
+
 
 {-| The always-visible hints of the status bar: the keys that matter in this view.
 -}
@@ -242,7 +298,7 @@ barHints : View -> List ( String, String )
 barHints v =
     let
         common =
-            [ ( "⏎", "discuss" ), ( "c", "comment" ), ( "a", "ask" ), ( "n", "new" ), ( "SPC", "menu" ), ( "?", "keys" ) ]
+            [ ( "f", "find" ), ( "s", "search" ), ( "[ ]", "repo" ), ( "Tab", "view" ), ( "⏎", "discuss" ), ( "c", "comment" ), ( "a", "ask" ), ( "n", "new" ), ( "SPC", "menu" ), ( "?", "keys" ) ]
     in
     case v of
         KanbanView ->
@@ -256,3 +312,43 @@ barHints v =
 
         WaterfallView ->
             [ ( "jk", "row" ), ( "hl", "scroll" ), ( "HL", "move task" ), ( "<>", "shorten/extend" ), ( "drag", "move" ) ] ++ common
+
+        EpicsView ->
+            [ ( "jk", "move" ), ( "JK", "priority" ), ( "SPC e e", "set epic" ) ] ++ common
+
+        StoryMapView ->
+            [ ( "hjkl", "move" ), ( "JK", "priority" ), ( "SPC e e", "set epic" ) ] ++ common
+
+        RoadmapView ->
+            [ ( "hjkl", "move" ), ( "HL", "now/next/later" ), ( "JK", "priority" ) ] ++ common
+
+        IterationsView ->
+            [ ( "hjkl", "move" ), ( "HL", "week" ), ( "JK", "priority" ) ] ++ common
+
+        FlowView ->
+            [ ( "Tab", "next view" ) ] ++ common
+
+        MatrixView ->
+            [ ( "jk", "move" ), ( "JK", "priority" ), ( "HL", "effort" ) ] ++ common
+
+
+{-| Every key sequence that does something from normal mode, with what it does:
+the whole table walked to its leaves. A test presses each one to keep the list honest.
+-}
+allKeys : List ( List String, String )
+allKeys =
+    walk [] root
+
+
+walk : List String -> List Binding -> List ( List String, String )
+walk path bindings =
+    List.concatMap
+        (\b ->
+            case b.entry of
+                Do _ ->
+                    [ ( path ++ [ b.key ], b.label ) ]
+
+                Prefix next ->
+                    walk (path ++ [ b.key ]) next
+        )
+        bindings

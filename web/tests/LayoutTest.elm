@@ -22,6 +22,7 @@ bead id created closed =
     , deps = []
     , due = ""
     , estDays = 0
+    , epics = []
     , createdMs = created
     , updatedMs = created + 10
     , closedMs = closed

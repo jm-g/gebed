@@ -45,8 +45,59 @@ suite =
                 [ press [] "h", press [] "j", press [] "k", press [] "l", press [] "H", press [] "L", press [] "J", press [] "K", press [] "<", press [] ">" ]
                     |> Expect.equal
                         [ Run (Move Left), Run (Move Down), Run (Move Up), Run (Move Right), Run (Push -1), Run (Push 1), Run (Bump 1), Run (Bump -1), Run (Stretch -1), Run (Stretch 1) ]
+        , test "every key in the all-keys list works: its prefixes wait and the last key runs" <|
+            \_ ->
+                let
+                    reaches ( path, _ ) =
+                        case List.reverse path of
+                            [] ->
+                                False
+
+                            lastKey :: restRev ->
+                                let
+                                    prefix =
+                                        List.reverse restRev
+
+                                    waits =
+                                        List.range 1 (List.length prefix)
+                                            |> List.all (\n -> press (List.take (n - 1) prefix) (List.drop (n - 1) prefix |> List.head |> Maybe.withDefault "") == Wait (List.take n prefix))
+                                in
+                                waits
+                                    && (case press prefix lastKey of
+                                            Run _ ->
+                                                True
+
+                                            _ ->
+                                                False
+                                       )
+                in
+                Keys.allKeys |> List.filter (not << reaches) |> Expect.equal []
+        , test "all-keys has no duplicate sequences and includes SPC Backspace itself" <|
+            \_ ->
+                let
+                    paths =
+                        List.map Tuple.first Keys.allKeys
+                in
+                ( List.length paths
+                    == List.length
+                        (List.foldl
+                            (\p acc ->
+                                if List.member p acc then
+                                    acc
+
+                                else
+                                    p :: acc
+                            )
+                            []
+                            paths
+                        )
+                , List.member [ " ", "Backspace" ] paths
+                )
+                    |> Expect.equal ( True, True )
+        , test "SPC Backspace opens the list" <|
+            \_ -> press [ " " ] "Backspace" |> Expect.equal (Run ShowAllKeys)
         , test "leader hints list the groups" <|
             \_ ->
                 hints [ " " ]
-                    |> Expect.equal [ ( "v", "view …" ), ( "e", "edit …" ), ( "p", "project …" ), ( "t", "theme …" ), ( "r", "reload" ) ]
+                    |> Expect.equal [ ( "v", "view …" ), ( "e", "edit …" ), ( "p", "project …" ), ( "t", "theme …" ), ( "r", "reload" ), ( "⌫", "ALL keys" ) ]
         ]

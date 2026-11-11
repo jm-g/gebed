@@ -26,6 +26,7 @@ type api struct {
 	themes func() []theme.Scheme
 	peers  Peers
 	user   string // author of comments written in the UI
+	snaps  snapshots
 	write  sync.Mutex
 }
 
@@ -60,6 +61,7 @@ type beadJSON struct {
 	DepCount       int        `json:"depCount"`
 	DependentCount int        `json:"dependentCount"`
 	Deps           []depJSON  `json:"deps"`
+	Epics          []epicJSON `json:"epics"`
 	// Unix milliseconds, for the waterfall; ClosedMs is nil while the bead is open.
 	// Due is the delivery day (YYYY-MM-DD in the local zone, empty when unset); the
 	// planned start is Due minus EstDays. EstDays is 0 when no estimate is set.
@@ -70,7 +72,10 @@ type beadJSON struct {
 	ClosedMs  *int64 `json:"closedMs"`
 }
 
-func toJSON(b model.Bead) beadJSON {
+func toJSON(b model.Bead, epics []epicJSON) beadJSON {
+	if epics == nil {
+		epics = []epicJSON{}
+	}
 	deps := make([]depJSON, 0, len(b.Deps))
 	for _, d := range b.Deps {
 		deps = append(deps, depJSON{d.On.String(), d.Type.String()})
@@ -97,7 +102,8 @@ func toJSON(b model.Bead) beadJSON {
 		Priority: b.Priority.Int(), Assignee: b.Assignee, Owner: b.Owner, Labels: labels,
 		Created: b.Created, Updated: b.Updated, Closed: b.Closed, CloseReason: b.CloseReason,
 		DepCount: b.DepCount, DependentCount: b.DependentCount, Deps: deps,
-		Due: due, EstDays: est, CreatedMs: b.Created.UnixMilli(), UpdatedMs: b.Updated.UnixMilli(), ClosedMs: closedMs,
+		Epics: epics,
+		Due:   due, EstDays: est, CreatedMs: b.Created.UnixMilli(), UpdatedMs: b.Updated.UnixMilli(), ClosedMs: closedMs,
 	}
 }
 
@@ -158,18 +164,20 @@ func (a *api) addRepo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *api) listBeads(w http.ResponseWriter, r *http.Request) {
-	s, ok := a.open(w, r)
+	repo, ok := a.reg.Find(r.PathValue("name"))
 	if !ok {
+		fail(w, http.StatusNotFound, errors.New("unknown repo"))
 		return
 	}
-	bs, err := s.List(r.Context())
+	sn, err := a.snapshot(r.Context(), repo)
 	if err != nil {
 		fail(w, http.StatusBadGateway, err)
 		return
 	}
-	out := make([]beadJSON, 0, len(bs))
-	for _, b := range bs {
-		out = append(out, toJSON(b))
+	a.warmDocs(repo, sn)
+	out := make([]beadJSON, 0, len(sn.beads))
+	for _, b := range sn.beads {
+		out = append(out, toJSON(b, sn.epics[b.ID.String()]))
 	}
 	reply(w, http.StatusOK, out)
 }
@@ -189,5 +197,11 @@ func (a *api) getBead(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadGateway, err)
 		return
 	}
-	reply(w, http.StatusOK, toJSON(b))
+	var epics []epicJSON
+	if repo, ok := a.reg.Find(r.PathValue("name")); ok {
+		if sn, err := a.snapshot(r.Context(), repo); err == nil {
+			epics = sn.epics[id.String()]
+		}
+	}
+	reply(w, http.StatusOK, toJSON(b, epics))
 }

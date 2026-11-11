@@ -22,6 +22,7 @@ bead id due days =
     , deps = []
     , due = due
     , estDays = days
+    , epics = []
     , createdMs = 0
     , updatedMs = 0
     , closedMs = Nothing

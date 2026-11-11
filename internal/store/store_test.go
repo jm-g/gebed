@@ -3,9 +3,13 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"sync"
 	"testing"
+	"time"
 
 	"gebed/internal/model"
 )
@@ -95,7 +99,10 @@ func TestEdgesCalls(t *testing.T) {
 		return model.Bead{ID: i, DepCount: deps}
 	}
 	var calls [][]string
+	var mu sync.Mutex
 	run := func(_ context.Context, _, bin string, args ...string) ([]byte, error) {
+		mu.Lock()
+		defer mu.Unlock()
 		calls = append(calls, append([]string{bin}, args...))
 		return []byte(`[]`), nil
 	}
@@ -105,7 +112,8 @@ func TestEdgesCalls(t *testing.T) {
 	if _, err := (&CLI{Backend: Br, Run: run}).Edges(context.Background(), beads); err != nil {
 		t.Fatal(err)
 	}
-	if len(calls) != 2 || calls[0][3] != "a-1" || calls[1][3] != "a-3" { // one call per bead with deps, none for a-2
+	sort.Slice(calls, func(i, j int) bool { return calls[i][3] < calls[j][3] }) // the calls run at once, in any order
+	if len(calls) != 2 || calls[0][3] != "a-1" || calls[1][3] != "a-3" {        // one call per bead with deps, none for a-2
 		t.Errorf("br calls %q", calls)
 	}
 
@@ -128,5 +136,31 @@ func TestEdgesCalls(t *testing.T) {
 	calls = nil
 	if es, _ := (&CLI{Backend: Br, Run: run}).Edges(context.Background(), beads[1:2]); es != nil || len(calls) != 0 {
 		t.Errorf("no deps must run nothing: %q", calls)
+	}
+}
+
+// The br edge reads run at once; the result must still follow the order of the
+// beads, whatever order the calls finish in.
+func TestEdgesKeepOrderWhenCallsRaceEachOther(t *testing.T) {
+	var beads []model.Bead
+	for i := 0; i < 20; i++ {
+		id, _ := model.ParseID(fmt.Sprintf("a-%02d", i))
+		beads = append(beads, model.Bead{ID: id, DepCount: 1})
+	}
+	run := func(_ context.Context, _, _ string, args ...string) ([]byte, error) {
+		id := args[2]
+		if id[len(id)-1]%2 == 0 { // some calls finish later than others
+			time.Sleep(5 * time.Millisecond)
+		}
+		return []byte(`[{"issue_id":"` + id + `","depends_on_id":"z-1","type":"blocks"}]`), nil
+	}
+	es, err := (&CLI{Backend: Br, Run: run}).Edges(context.Background(), beads)
+	if err != nil || len(es) != 20 {
+		t.Fatalf("%v %d", err, len(es))
+	}
+	for i, e := range es {
+		if e.From.String() != fmt.Sprintf("a-%02d", i) {
+			t.Fatalf("edge %d is %s: order lost", i, e.From)
+		}
 	}
 }

@@ -78,3 +78,11 @@ func TestSetScheduleArgv(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestRemoveDepArgv(t *testing.T) {
+	op := RemoveDep{must(model.ParseID("c-1")), must(model.ParseRef("e-1"))}
+	want := []string{"dep", "remove", "c-1", "e-1", "--json"}
+	if got := op.argv(); !slices.Equal(got, want) {
+		t.Fatalf("got %q", got)
+	}
+}

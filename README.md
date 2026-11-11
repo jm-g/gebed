@@ -21,7 +21,9 @@ It opens on a kanban board. It's keyboard first, like vim: `h` `j` `k` `l` move 
 
 The capital letters move things. `H` and `L` move the selected card to the column on its left or right, and `J` and `K` lower or raise its priority. `Enter` opens the bead's discussion, `c` comments, `a` asks the agent, `n` makes a new bead. `SPC` opens a little popup that shows what each next key does, and `?` lists them all.
 
-`SPC v` changes the view: kanban, list, dependency graph or waterfall. `SPC e` edits the rest (title, labels, links).
+`SPC v` changes the view and `Tab` cycles through them: kanban, list, epics, story map, roadmap, iterations, waterfall, dependency graph, flow metrics (burnup, throughput, lead time) and an impact/effort matrix. `SPC e` edits the rest (title, labels, links, epic). `[` and `]` switch repos. `SPC` then Backspace lists every key.
+
+`f` finds beads with fuzzy matching and `s` searches exactly, across all your repos: ids, titles, text, comments, labels, epics and dates. An epic is a bead of kind `epic`; the beads in it carry its name as a tag.
 
 The waterfall has a time ruler. Each task has a delivery date and a length, so its bar starts that many days earlier. Drag a bar, or press `H` and `L`, to move it a day at a time, and press `<` and `>` to shorten or extend it. The dates are saved in the bead (`due` and the estimate), so `br` and `bd` see them too.
 
@@ -35,7 +37,7 @@ Every bead is a discussion. Comments are stored by `br`/`bd` in the repo, so whe
 
 Write `@name` in a comment and gebed sends it to the running Claude Code session with that name, then tells you who got it. The agent answers in the same bead.
 
-This only works on Linux for now, because that's where gebed can find live sessions.
+Claude Code integration only works on Linux for now, because that's where gebed can find live sessions.
 
 ## Claude Code
 
@@ -46,7 +48,7 @@ $ claude mcp add gebed -- gebed mcp
 $ gebed skill install
 ```
 
-Keep `gebed` running while the agent works, the MCP tools talk to it.
+Keep `gebed` running while the agent works, the MCP tools talk to it. Ask your agents to load gebed SKILL.
 
 ## Build
 

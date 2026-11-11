@@ -161,3 +161,14 @@ func (o SetSchedule) argv() []string {
 		"--estimate=" + strconv.Itoa(o.Days.EstimateMinutes()), "--json"}
 }
 func (o SetSchedule) target() (model.ID, bool) { return o.ID, true }
+
+// RemoveDep removes the edge from From to On. It is how a bead leaves an epic.
+type RemoveDep struct {
+	From model.ID
+	On   model.Ref
+}
+
+func (o RemoveDep) argv() []string {
+	return []string{"dep", "remove", o.From.String(), o.On.String(), "--json"}
+}
+func (o RemoveDep) target() (model.ID, bool) { return o.From, true }
