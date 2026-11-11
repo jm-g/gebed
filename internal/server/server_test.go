@@ -430,3 +430,33 @@ func TestSearchAPI(t *testing.T) {
 		t.Errorf("bad mode: %d", rec.Code)
 	}
 }
+
+func TestSetScheduleMinutes(t *testing.T) {
+	var ran []string
+	reg, _ := registry.Load(filepath.Join(t.TempDir(), "repos.json"))
+	dir := filepath.Join(t.TempDir(), "proj")
+	if err := os.MkdirAll(filepath.Join(dir, ".beads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reg.Add(dir); err != nil {
+		t.Fatal(err)
+	}
+	h := New(reg, func(_ context.Context, _, _ string, args ...string) ([]byte, error) {
+		ran = args
+		return []byte(`{}`), nil
+	}, theme.Builtin, fakePeers{}, "vic")
+	rec := get(h, "POST", "/api/repos/proj/ops", `{"op":"setSchedule","id":"x-1","due":"2026-11-20T14:30:00Z","minutes":20}`)
+	if rec.Code != 200 || ran[2] != "--due=2026-11-20T14:30:00Z" || ran[3] != "--estimate=20" {
+		t.Fatalf("%d %q", rec.Code, ran)
+	}
+	for name, body := range map[string]string{
+		"both days and minutes": `{"op":"setSchedule","id":"x-1","due":"2026-11-20","days":1,"minutes":5}`,
+		"neither":               `{"op":"setSchedule","id":"x-1","due":"2026-11-20"}`,
+		"space time":            `{"op":"setSchedule","id":"x-1","due":"2026-11-20 14:30","minutes":5}`,
+	} {
+		ran = nil
+		if rec := get(h, "POST", "/api/repos/proj/ops", body); rec.Code != 422 || ran != nil {
+			t.Errorf("%s: %d %q", name, rec.Code, ran)
+		}
+	}
+}

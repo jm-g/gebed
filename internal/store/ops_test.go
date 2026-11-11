@@ -72,7 +72,7 @@ func TestAddCommentArgv(t *testing.T) {
 }
 
 func TestSetScheduleArgv(t *testing.T) {
-	op := SetSchedule{must(model.ParseID("x-1")), must(model.ParseDate("2026-11-20")), must(model.ParseDays(3))}
+	op := SetSchedule{must(model.ParseID("x-1")), must(model.ParseWhen("2026-11-20")), must(model.ParseMinutes(4320))}
 	want := []string{"update", "x-1", "--due=2026-11-20", "--estimate=4320", "--json"}
 	if got := op.argv(); !slices.Equal(got, want) {
 		t.Fatalf("got %q", got)
@@ -82,6 +82,14 @@ func TestSetScheduleArgv(t *testing.T) {
 func TestRemoveDepArgv(t *testing.T) {
 	op := RemoveDep{must(model.ParseID("c-1")), must(model.ParseRef("e-1"))}
 	want := []string{"dep", "remove", "c-1", "e-1", "--json"}
+	if got := op.argv(); !slices.Equal(got, want) {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestSetScheduleExactTime(t *testing.T) {
+	op := SetSchedule{must(model.ParseID("x-1")), must(model.ParseWhen("2026-11-20T08:30:45-06:00")), must(model.ParseMinutes(45))}
+	want := []string{"update", "x-1", "--due=2026-11-20T14:30:00Z", "--estimate=45", "--json"}
 	if got := op.argv(); !slices.Equal(got, want) {
 		t.Fatalf("got %q", got)
 	}

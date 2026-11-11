@@ -2,6 +2,7 @@ module KeysTest exposing (suite)
 
 import Expect
 import Keys exposing (Action(..), ComposeKind(..), Dir(..), Outcome(..), View(..), hints, press)
+import Scroll exposing (Place(..))
 import Test exposing (Test, describe, test)
 
 
@@ -94,6 +95,15 @@ suite =
                 , List.member [ " ", "Backspace" ] paths
                 )
                     |> Expect.equal ( True, True )
+        , test "vim motions: gt gT [[ ]] { } zt zz zb" <|
+            \_ ->
+                [ press [ "g" ] "t", press [ "g" ] "T", press [ "[" ] "[", press [ "]" ] "]", press [] "{", press [] "}", press [ "z" ] "t", press [ "z" ] "z", press [ "z" ] "b" ]
+                    |> Expect.equal
+                        [ Run (ViewStep 1), Run (ViewStep -1), Run (Section -1), Run (Section 1), Run (SectionEdge -1), Run (SectionEdge 1), Run (Align AtTop), Run (Align AtMiddle), Run (Align AtBottom) ]
+        , test "repos and views by bracket, zoom by plus and minus" <|
+            \_ ->
+                [ press [ "[" ] "r", press [ "]" ] "r", press [ "[" ] "v", press [ "]" ] "v", press [] "+", press [] "-", press [] "0", press [] "Tab" ]
+                    |> Expect.equal [ Run (RepoStep -1), Run (RepoStep 1), Run (ViewStep -1), Run (ViewStep 1), Run (Zoom 1), Run (Zoom -1), Run ZoomReset, Run (ViewStep 1) ]
         , test "SPC S opens the sponsor page" <|
             \_ -> press [ " " ] "S" |> Expect.equal (Run Sponsor)
         , test "SPC Backspace opens the list" <|

@@ -23,6 +23,8 @@ bead id status prio =
     , deps = []
     , due = ""
     , estDays = 0
+    , dueMs = Nothing
+    , estMin = 0
     , epics = []
     , createdMs = 0
     , updatedMs = 0
@@ -67,6 +69,29 @@ suite =
             \_ ->
                 [ go ListView Down (Just "a1"), go ListView Down (Just "a2"), go ListView Down (Just "c1") ]
                     |> Expect.equal [ Just "a2", Just "c1", Just "d1" ]
+        , test "sections of the kanban are its columns, empty ones left out" <|
+            \_ -> Nav.sections 0 KanbanView beads |> List.map (List.map .id) |> Expect.equal [ [ "a1", "a2" ], [ "c1" ], [ "d1" ] ]
+        , test "]] goes to the start of the next section, stopping at the last" <|
+            \_ ->
+                let
+                    secs =
+                        Nav.sections 0 KanbanView beads
+                in
+                [ Nav.section 1 (Just "a2") secs, Nav.section 1 (Just "c1") secs, Nav.section 1 (Just "d1") secs ] |> Expect.equal [ Just "c1", Just "d1", Just "d1" ]
+        , test "[[ goes to the start of this section first, then the previous one" <|
+            \_ ->
+                let
+                    secs =
+                        Nav.sections 0 KanbanView beads
+                in
+                [ Nav.section -1 (Just "a2") secs, Nav.section -1 (Just "a1") secs, Nav.section -1 (Just "c1") secs ] |> Expect.equal [ Just "a1", Just "a1", Just "a1" ]
+        , test "{ and } are the first and last bead of the section" <|
+            \_ ->
+                let
+                    secs =
+                        Nav.sections 0 KanbanView beads
+                in
+                [ Nav.edge -1 (Just "a2") secs, Nav.edge 1 (Just "a1") secs ] |> Expect.equal [ Just "a1", Just "a2" ]
         , test "h and l do nothing in the list" <|
             \_ -> go ListView Right (Just "a1") |> Expect.equal (Just "a1")
         ]

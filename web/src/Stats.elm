@@ -1,4 +1,4 @@
-module Stats exposing (summary)
+module Stats exposing (summary, tab)
 
 {-| The numbers in the status bar, per view.
 -}
@@ -6,7 +6,7 @@ module Stats exposing (summary)
 import Agile
 import Board
 import Keys exposing (View(..))
-import Schedule
+import Timeline
 import Types exposing (Bead, Edge, Status(..), statusLabel)
 
 
@@ -20,8 +20,8 @@ n k label =
     String.fromInt k ++ " " ++ label
 
 
-summary : Int -> View -> List Bead -> List Edge -> List String
-summary today view beads edges =
+summary : Int -> Timeline.Clock -> View -> List Bead -> List Edge -> List String
+summary today clock view beads edges =
     case view of
         KanbanView ->
             n (List.length beads) "beads"
@@ -76,12 +76,52 @@ summary today view beads edges =
         WaterfallView ->
             let
                 ss =
-                    Schedule.spans today beads
+                    Timeline.spans clock beads
 
                 late =
-                    List.filter (\s -> s.scheduled && s.end < today && s.bead.status /= Closed) ss
+                    List.filter (\s -> s.scheduled && s.end < clock.now && s.bead.status /= Closed) ss
             in
             [ n (List.length (List.filter .scheduled ss)) "scheduled"
             , n (List.length (List.filter (not << .scheduled) ss)) "unscheduled"
             , n (List.length late) "late"
             ]
+
+
+{-| One number for a tab of the view bar: how much there is to see in that view.
+-}
+tab : Int -> Timeline.Clock -> View -> List Bead -> List Edge -> String
+tab today clock view beads edges =
+    let
+        k =
+            String.fromInt
+    in
+    case view of
+        KanbanView ->
+            k (List.length beads)
+
+        ListView ->
+            k (count (\b -> b.status /= Closed) beads)
+
+        GraphView ->
+            k (List.length edges)
+
+        WaterfallView ->
+            k (List.length (List.filter .scheduled (Timeline.spans clock beads)))
+
+        EpicsView ->
+            k (List.length (List.filter (\g -> g.epic /= Nothing) (Agile.epicGroups beads)))
+
+        StoryMapView ->
+            k (List.length (List.filter (\g -> g.epic /= Nothing) (Agile.epicGroups beads)))
+
+        RoadmapView ->
+            Agile.roadmapCols today beads |> List.head |> Maybe.map (.beads >> List.length >> k) |> Maybe.withDefault "0"
+
+        IterationsView ->
+            Agile.iterationCols today beads |> List.drop 1 |> List.head |> Maybe.map (.beads >> List.length >> k) |> Maybe.withDefault "0"
+
+        FlowView ->
+            k (List.sum (List.map .closed (Agile.flow today beads).weeks))
+
+        MatrixView ->
+            k (List.length (List.concatMap (\p -> List.concatMap (\c -> Agile.matrixCell p c beads) [ 1, 2 ]) [ 0, 1 ]))

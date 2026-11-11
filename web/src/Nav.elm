@@ -1,4 +1,4 @@
-module Nav exposing (order, step)
+module Nav exposing (edge, order, section, sections, step)
 
 {-| Moving the selection with h j k l. The selection is a bead id, so it
 survives a reload and follows a card that changes column.
@@ -7,7 +7,7 @@ survives a reload and follows a card that changes column.
 import Agile
 import Board
 import Keys exposing (Dir(..), View(..))
-import Schedule
+import Timeline
 import Types exposing (Bead)
 
 
@@ -17,7 +17,7 @@ order : Int -> View -> List Bead -> List Bead
 order today view beads =
     case ( view, Agile.columnsFor today view beads ) of
         ( WaterfallView, _ ) ->
-            Schedule.spans today beads |> List.map .bead
+            Timeline.spans { offset = 0, now = 0 } beads |> List.map .bead
 
         ( _, Just cols ) ->
             List.concatMap .beads cols
@@ -128,3 +128,93 @@ sideways dx c r cols =
 
         Just col ->
             at (min r (List.length col - 1)) col |> Maybe.map .id
+
+
+{-| The sections of a view, as vim's [[ and ]] see them: the columns of a board,
+the status groups of the list, an epic with its children, a priority row of the
+matrix; elsewhere blocks of ten rows. Empty sections are left out.
+-}
+sections : Int -> View -> List Bead -> List (List Bead)
+sections today view beads =
+    let
+        flat =
+            order today view beads
+
+        chunks xs =
+            if List.isEmpty xs then
+                []
+
+            else
+                List.take 10 xs :: chunks (List.drop 10 xs)
+    in
+    (case ( Agile.columnsFor today view beads, view ) of
+        ( Just cols, _ ) ->
+            List.map .beads cols
+
+        ( _, ListView ) ->
+            List.map Tuple.second (Board.columns beads)
+
+        ( _, EpicsView ) ->
+            Agile.epicGroups beads |> List.map (\g -> (Maybe.map List.singleton g.epic |> Maybe.withDefault []) ++ g.children)
+
+        ( _, MatrixView ) ->
+            List.map (\p -> List.concatMap (\c -> Agile.matrixCell p c beads) (List.range 0 4)) (List.range 0 4)
+
+        _ ->
+            chunks flat
+    )
+        |> List.filter (not << List.isEmpty)
+
+
+sectionOf : String -> List (List Bead) -> Maybe Int
+sectionOf id secs =
+    secs
+        |> List.indexedMap (\i s -> ( i, List.any (\b -> b.id == id) s ))
+        |> List.filter Tuple.second
+        |> List.head
+        |> Maybe.map Tuple.first
+
+
+firstOf : Int -> List (List Bead) -> Maybe String
+firstOf i secs =
+    List.drop i secs |> List.head |> Maybe.andThen List.head |> Maybe.map .id
+
+
+{-| [[ goes to the start of this section, or of the previous one when already
+there; ]] goes to the start of the next. Nothing selected starts at the first
+section.
+-}
+section : Int -> Maybe String -> List (List Bead) -> Maybe String
+section dir sel secs =
+    case sel |> Maybe.andThen (\id -> sectionOf id secs |> Maybe.map (\i -> ( id, i ))) of
+        Nothing ->
+            firstOf 0 secs
+
+        Just ( id, i ) ->
+            if dir < 0 then
+                if firstOf i secs /= Just id then
+                    firstOf i secs
+
+                else
+                    firstOf (max 0 (i - 1)) secs
+
+            else
+                firstOf (min (List.length secs - 1) (i + 1)) secs
+
+
+{-| { and } go to the first and last bead of the current section.
+-}
+edge : Int -> Maybe String -> List (List Bead) -> Maybe String
+edge dir sel secs =
+    case sel |> Maybe.andThen (\id -> sectionOf id secs) |> Maybe.andThen (\i -> List.drop i secs |> List.head) of
+        Nothing ->
+            firstOf 0 secs
+
+        Just s ->
+            (if dir < 0 then
+                List.head s
+
+             else
+                List.reverse s |> List.head
+            )
+                |> Maybe.map .id

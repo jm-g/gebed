@@ -65,8 +65,12 @@ type beadJSON struct {
 	// Unix milliseconds, for the waterfall; ClosedMs is nil while the bead is open.
 	// Due is the delivery day (YYYY-MM-DD in the local zone, empty when unset); the
 	// planned start is Due minus EstDays. EstDays is 0 when no estimate is set.
-	Due       string `json:"due"`
-	EstDays   int    `json:"estDays"`
+	Due     string `json:"due"`
+	EstDays int    `json:"estDays"`
+	// The exact delivery time (Unix ms, nil when unset) and length in minutes, for the
+	// waterfall at hour and minute zoom.
+	DueMs     *int64 `json:"dueMs"`
+	EstMin    int    `json:"estMin"`
 	CreatedMs int64  `json:"createdMs"`
 	UpdatedMs int64  `json:"updatedMs"`
 	ClosedMs  *int64 `json:"closedMs"`
@@ -89,8 +93,11 @@ func toJSON(b model.Bead, epics []epicJSON) beadJSON {
 		m := b.Closed.UnixMilli()
 		closedMs = &m
 	}
+	var dueMs *int64
 	due, est := "", 0
 	if b.Due != nil {
+		m := b.Due.UnixMilli()
+		dueMs = &m
 		due = model.DateOf(*b.Due, time.Local).String()
 	}
 	if b.EstimateMin > 0 {
@@ -103,7 +110,8 @@ func toJSON(b model.Bead, epics []epicJSON) beadJSON {
 		Created: b.Created, Updated: b.Updated, Closed: b.Closed, CloseReason: b.CloseReason,
 		DepCount: b.DepCount, DependentCount: b.DependentCount, Deps: deps,
 		Epics: epics,
-		Due:   due, EstDays: est, CreatedMs: b.Created.UnixMilli(), UpdatedMs: b.Updated.UnixMilli(), ClosedMs: closedMs,
+		Due:   due, EstDays: est, DueMs: dueMs, EstMin: b.EstimateMin,
+		CreatedMs: b.Created.UnixMilli(), UpdatedMs: b.Updated.UnixMilli(), ClosedMs: closedMs,
 	}
 }
 

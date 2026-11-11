@@ -21,11 +21,13 @@ It opens on a kanban board. It's keyboard first, like vim: `h` `j` `k` `l` move 
 
 The capital letters move things. `H` and `L` move the selected card to the column on its left or right, and `J` and `K` lower or raise its priority. `Enter` opens the bead's discussion, `c` comments, `a` asks the agent, `n` makes a new bead. `SPC` opens a little popup that shows what each next key does, and `?` lists them all.
 
-`SPC v` changes the view and `Tab` cycles through them: kanban, list, epics, story map, roadmap, iterations, waterfall, dependency graph, flow metrics (burnup, throughput, lead time) and an impact/effort matrix. `SPC e` edits the rest (title, labels, links, epic). `[` and `]` switch repos. `SPC` then Backspace lists every key.
+`SPC v` changes the view and `Tab` cycles through them: kanban, list, epics, story map, roadmap, iterations, waterfall, dependency graph, flow metrics (burnup, throughput, lead time) and an impact/effort matrix. `SPC e` edits the rest (title, labels, links, epic). `gt` and `gT` (or `Tab`) step through the views, which are also tabs in the second bar at the top with their counts. `[r` and `]r` switch repos, `[[` and `]]` jump between sections (columns, epics, groups), `{` and `}` to the start and end of the section, and `zt` `zz` `zb` put the selection at the top, middle or bottom, like vim; every motion scrolls to keep the selection in view. `SPC` then Backspace lists every key.
 
 `f` finds beads with fuzzy matching and `s` searches exactly, across all your repos: ids, titles, text, comments, labels, epics and dates. An epic is a bead of kind `epic`; the beads in it carry its name as a tag.
 
 The waterfall has a time ruler. Each task has a delivery date and a length, so its bar starts that many days earlier. Drag a bar, or press `H` and `L`, to move it a day at a time, and press `<` and `>` to shorten or extend it. The dates are saved in the bead (`due` and the estimate), so `br` and `bd` see them too.
+
+Agents finish work in minutes, so the waterfall zooms: `+` and `-` go from one day per cell down to 6 hours, an hour, 15 and 5 minutes. At each zoom `H` and `L` slide a task by one cell and `<` and `>` shorten or extend it by one cell. Times are stored to the minute in the bead (`due` and the estimate).
 
 Colors come from base16 and base24 schemes, `SPC t n` cycles them. Drop your own `.yaml` files in `~/.config/gebed/themes/`.
 

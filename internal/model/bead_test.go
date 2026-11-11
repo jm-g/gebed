@@ -87,3 +87,27 @@ func TestSchedule(t *testing.T) {
 		}
 	}
 }
+
+func TestWhen(t *testing.T) {
+	for in, want := range map[string]string{
+		"2026-11-20":                "2026-11-20",
+		"2026-11-20T14:30:00Z":      "2026-11-20T14:30:00Z",
+		"2026-11-20T08:30:45-06:00": "2026-11-20T14:30:00Z", // other zones become UTC, seconds are dropped
+	} {
+		w, err := ParseWhen(in)
+		if err != nil || w.String() != want {
+			t.Errorf("%s: %v %v", in, w, err)
+		}
+	}
+	for _, bad := range []string{"", "2026-11-20 14:30", "tomorrow", "+2h", "1999-01-01T00:00:00Z", "2026-11-20T25:00:00Z"} {
+		if _, err := ParseWhen(bad); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+	if _, err := ParseMinutes(0); err == nil {
+		t.Error("0 minutes accepted")
+	}
+	if _, err := ParseMinutes(525601); err == nil {
+		t.Error("more than a year accepted")
+	}
+}

@@ -17,13 +17,14 @@ import Keys exposing (Action(..), ComposeKind(..), Dir(..), Outcome(..), View(..
 import Layout
 import Nav
 import Schedule
-import Scroll
+import Scroll exposing (Place(..))
 import Stats
 import Svg
 import Svg.Attributes as SA
 import Task
 import Theme
 import Time
+import Timeline
 import Types exposing (Bead, Comment, Delivery, Edge, Hit, Repo, Session, statusLabel)
 import Url
 import Widgets exposing (chips, dueText, prioBadge, statusClass)
@@ -70,6 +71,10 @@ type alias Model =
     , selId : Maybe String
     , today : Int
     , drag : Maybe Drag
+    , zoom : Int
+    , offset : Int
+    , nowMin : Int
+    , focusMin : Maybe Int
     , finder : Maybe Finder
     , allKeys : Bool
     , focus : Maybe String
@@ -97,7 +102,7 @@ type alias Drag =
     { id : String
     , startX : Float
     , dx : Float
-    , plan : Schedule.Plan
+    , plan : Timeline.Plan
     }
 
 
@@ -126,7 +131,9 @@ type Msg
     | CancelCompose
     | Mention String
     | MentionNext
-    | GotToday Int
+    | GotClock Int Int Int
+    | GoView View
+    | ZoomBy Int
     | Select String
     | DragStart String Float
     | DragMove Float
@@ -153,6 +160,10 @@ main =
                   , selId = Nothing
                   , today = 0
                   , drag = Nothing
+                  , zoom = Timeline.defaultZoom
+                  , offset = 0
+                  , nowMin = 0
+                  , focusMin = Nothing
                   , finder = Nothing
                   , allKeys = False
                   , focus = Nothing
@@ -165,7 +176,7 @@ main =
                   , flash = Nothing
                   , edges = []
                   }
-                , Cmd.batch [ getRepos, getThemes, getToday ]
+                , Cmd.batch [ getRepos, getThemes, getClock ]
                 )
         , update = update
         , view = view
@@ -488,8 +499,14 @@ update msg model =
                 Nothing ->
                     ( { model | finder = Nothing }, Cmd.none )
 
-        GotToday d ->
-            ( { model | today = d }, Cmd.none )
+        GotClock d off now ->
+            ( { model | today = d, offset = off, nowMin = now }, Cmd.none )
+
+        GoView v ->
+            run (Show v) model
+
+        ZoomBy d ->
+            zoomBy d model
 
         Select id ->
             ( { model | selId = Just id }, Cmd.none )
@@ -499,7 +516,7 @@ update msg model =
                 Ready bs ->
                     case List.filter (\b -> b.id == id) bs |> List.head of
                         Just b ->
-                            ( { model | selId = Just id, drag = Just { id = id, startX = x, dx = 0, plan = Schedule.plan model.today b } }, Cmd.none )
+                            ( { model | selId = Just id, drag = Just { id = id, startX = x, dx = 0, plan = Timeline.plan (clockOf model) b } }, Cmd.none )
 
                         Nothing ->
                             ( model, Cmd.none )
@@ -515,7 +532,7 @@ update msg model =
                 ( Just d, Ready bs ) ->
                     let
                         moved =
-                            round (d.dx / toFloat dayW)
+                            round (d.dx / toFloat cellW) * cellMinutes model
                     in
                     case List.filter (\b -> b.id == d.id) bs |> List.head of
                         Just b ->
@@ -523,7 +540,7 @@ update msg model =
                                 ( { model | drag = Nothing }, Cmd.none )
 
                             else
-                                schedule { model | drag = Nothing } b { due = d.plan.due + moved, days = d.plan.days }
+                                scheduleExact { model | drag = Nothing } b { end = d.plan.end + moved, minutes = d.plan.minutes }
 
                         Nothing ->
                             ( { model | drag = Nothing }, Cmd.none )
@@ -605,10 +622,10 @@ update msg model =
         Tick _ ->
             case model.current of
                 Just name ->
-                    ( model, Cmd.batch [ getVersion name, getToday ] )
+                    ( model, Cmd.batch [ getVersion name, getClock ] )
 
                 Nothing ->
-                    ( model, getToday )
+                    ( model, getClock )
 
         GotVersion name (Ok v) ->
             if model.current /= Just name || model.version == Just v then
@@ -866,7 +883,7 @@ run action model =
         Push dx ->
             case ( model.view, target model ) of
                 ( WaterfallView, Just b ) ->
-                    schedule model b (Schedule.slide model.today dx b)
+                    scheduleExact model b (Timeline.slide (cellMinutes model) dx (clockOf model) b)
 
                 ( IterationsView, Just b ) ->
                     schedule model b (Schedule.slide model.today (7 * dx) b)
@@ -911,7 +928,7 @@ run action model =
                     schedule model b (Schedule.stretch model.today d b)
 
                 ( WaterfallView, Just b ) ->
-                    schedule model b (Schedule.stretch model.today d b)
+                    scheduleExact model b (Timeline.stretch (cellMinutes model) d (clockOf model) b)
 
                 _ ->
                     ( { model | flash = Just "< and > resize a task on the waterfall (SPC v w)" }, Cmd.none )
@@ -922,8 +939,32 @@ run action model =
         RepoStep d ->
             stepRepo d model
 
-        NextView ->
-            run (Show (nextView model.view)) model
+        ViewStep d ->
+            run (Show (stepView d model.view)) model
+
+        Section d ->
+            moveTo (Nav.section d (Maybe.map .id (selected model)) (sectionsOf model)) model
+
+        SectionEdge d ->
+            moveTo (Nav.edge d (Maybe.map .id (selected model)) (sectionsOf model)) model
+
+        Align place ->
+            ( model
+            , Cmd.batch
+                [ alignSelection model.view place
+                , if model.view == WaterfallView then
+                    focusScroll model
+
+                  else
+                    Cmd.none
+                ]
+            )
+
+        Zoom d ->
+            zoomBy d model
+
+        ZoomReset ->
+            zoomBy (0 - model.zoom) model
 
         ShowAllKeys ->
             ( { model | allKeys = True, pending = [] }, Cmd.none )
@@ -945,12 +986,15 @@ run action model =
 
         Show v ->
             ( { model | view = v }
-            , case ( v, model.current ) of
-                ( GraphView, Just name ) ->
-                    getEdges name
+            , Cmd.batch
+                [ case ( v, model.current ) of
+                    ( GraphView, Just name ) ->
+                        getEdges name
 
-                _ ->
-                    Cmd.none
+                    _ ->
+                        Cmd.none
+                , reveal v
+                ]
             )
 
         NextTheme ->
@@ -1186,6 +1230,7 @@ view model =
     in
     div (class "root" :: themeVars)
         [ viewBar model
+        , viewTabs model
         , div [ class "app" ]
             [ div [ class "sidebar" ] (loaded model.repos (viewRepos model.current))
             , div [ class "main", A.id "main" ] (viewMain model)
@@ -1558,20 +1603,39 @@ viewMain model =
             loaded model.beads (viewBody model)
 
 
-dayW : Int
-dayW =
-    32
+cellW : Int
+cellW =
+    40
 
 
-getToday : Cmd Msg
-getToday =
+{-| The zone offset and now, in the local minutes the timeline works in.
+-}
+getClock : Cmd Msg
+getClock =
     Task.map2
         (\zone now ->
-            Calendar.fromYmd (Time.toYear zone now) (monthNumber (Time.toMonth zone now)) (Time.toDay zone now)
+            let
+                utc =
+                    Time.posixToMillis now // 60000
+
+                off0 =
+                    Time.toHour zone now * 60 + Time.toMinute zone now - modBy 1440 utc
+
+                off =
+                    if off0 > 720 then
+                        off0 - 1440
+
+                    else if off0 < -720 then
+                        off0 + 1440
+
+                    else
+                        off0
+            in
+            { day = (utc + off) // 1440, offset = off, now = utc + off }
         )
         Time.here
         Time.now
-        |> Task.perform GotToday
+        |> Task.perform (\c -> GotClock c.day c.offset c.now)
 
 
 monthNumber : Time.Month -> Int
@@ -1617,7 +1681,7 @@ monthNumber m =
 scrollTimeline : Int -> Cmd Msg
 scrollTimeline days =
     Dom.getViewportOf "wf"
-        |> Task.andThen (\v -> Dom.setViewportOf "wf" (max 0 (v.viewport.x + toFloat (days * dayW))) v.viewport.y)
+        |> Task.andThen (\v -> Dom.setViewportOf "wf" (max 0 (v.viewport.x + toFloat (days * cellW))) v.viewport.y)
         |> Task.attempt (\_ -> NoOp)
 
 
@@ -1664,8 +1728,15 @@ viewBar model =
     div [ class "bar" ]
         [ span [ class ("mode " ++ modeClass) ] [ text mode ]
         , span [ class "pending" ] [ text pending ]
-        , span [ class "vname" ] [ text (Keys.viewName model.view) ]
-        , span [ class "stats" ] (List.map (\s -> span [ class "stat" ] [ text s ]) (Stats.summary model.today model.view beads model.edges))
+        , span [ class "vname" ]
+            [ text
+                (if model.view == WaterfallView then
+                    "zoom " ++ (Timeline.zoomAt model.zoom).name
+
+                 else
+                    ""
+                )
+            ]
         , span [ class "hints" ]
             (List.map
                 (\( k, label ) -> span [ class "hint" ] [ span [ class "key" ] [ text k ], text (" " ++ label) ])
@@ -1732,46 +1803,52 @@ listRow sel b =
 viewWaterfall : Model -> Maybe String -> List Bead -> Html Msg
 viewWaterfall model sel beads =
     let
+        zoom =
+            Timeline.zoomAt model.zoom
+
+        cell =
+            zoom.cell
+
+        c =
+            clockOf model
+
         ss =
-            Schedule.spans model.today beads
+            Timeline.spans c beads
 
         ( from, to ) =
-            Schedule.window model.today ss
+            Timeline.window cell (Maybe.withDefault model.nowMin model.focusMin) c ss
+
+        n =
+            (to - from) // cell + 1
 
         total =
-            (to - from + 1) * dayW
+            n * cellW
 
-        px d =
-            (d - from) * dayW
+        px m =
+            (m - from) * cellW // cell
 
-        days =
-            List.range from to
+        starts =
+            List.range 0 (n - 1) |> List.map (\i -> from + i * cell)
 
-        cell d =
+        cellNode i start =
             span
-                [ classList [ ( "wd", True ), ( "wend", Calendar.weekend d ), ( "wnow", d == model.today ) ] ]
-                [ text (String.fromInt (Calendar.dayOfMonth d)) ]
-
-        monthCell d =
-            span [ class "wm" ]
-                [ text
-                    (if d == from || Calendar.dayOfMonth d == 1 then
-                        let
-                            c =
-                                Calendar.civil d
-                        in
-                        Calendar.monthName c.month ++ " " ++ String.fromInt c.year
-
-                     else
-                        ""
-                    )
+                [ classList
+                    [ ( "wd", True )
+                    , ( "wend", cell >= 1440 && Calendar.weekend (start // 1440) )
+                    , ( "wnow", start <= model.nowMin && model.nowMin < start + cell )
+                    , ( "wmid", cell < 1440 && modBy 1440 start == 0 )
+                    ]
                 ]
+                [ text (Timeline.cellLabel cell start) ]
+
+        monthNode i start =
+            span [ class "wm" ] [ text (Timeline.topLabel cell start (i == 0)) ]
 
         shift s =
             case model.drag of
                 Just d ->
                     if d.id == s.bead.id then
-                        round (d.dx / toFloat dayW)
+                        round (d.dx / toFloat cellW) * cell
 
                     else
                         0
@@ -1782,10 +1859,17 @@ viewWaterfall model sel beads =
         bar s =
             let
                 late =
-                    s.scheduled && s.end < model.today && s.bead.status /= Types.Closed
+                    s.scheduled && s.end < model.nowMin && s.bead.status /= Types.Closed
 
-                left =
-                    px (s.start + shift s)
+                moved =
+                    shift s
+
+                width =
+                    if s.scheduled then
+                        max 8 ((s.end - s.start) * cellW // cell - 2)
+
+                    else
+                        cellW - 2
             in
             div
                 [ classList
@@ -1794,13 +1878,13 @@ viewWaterfall model sel beads =
                     , ( "unsched", not s.scheduled )
                     , ( "late", late )
                     , ( "current", sel == Just s.bead.id )
-                    , ( "dragging", shift s /= 0 )
+                    , ( "dragging", moved /= 0 )
                     ]
-                , A.style "left" (String.fromInt left ++ "px")
-                , A.style "width" (String.fromInt ((s.end - s.start + 1) * dayW - 2) ++ "px")
+                , A.style "left" (String.fromInt (px (s.start + moved)) ++ "px")
+                , A.style "width" (String.fromInt width ++ "px")
                 , A.title
                     (if s.scheduled then
-                        Calendar.toIso (s.start + shift s) ++ " → " ++ Calendar.toIso (s.end + shift s)
+                        Timeline.stamp (s.start + moved) ++ " → " ++ Timeline.stamp (s.end + moved)
 
                      else
                         "not scheduled yet: move it with H and L, or drag it"
@@ -1810,26 +1894,229 @@ viewWaterfall model sel beads =
                 ]
                 [ text s.bead.title ]
 
+        inWindow s =
+            s.end + cell >= from && s.start <= to + cell
+
         row s =
             div (selMark sel s.bead.id ++ [ classList [ ( "wrow", True ), ( "current", sel == Just s.bead.id ) ] ])
                 [ span [ class "wlabel", onClick (Select s.bead.id) ]
                     [ span [ class "id" ] [ text s.bead.id ], text (" " ++ s.bead.title) ]
                 , div [ class "wtrack", A.style "width" (String.fromInt total ++ "px") ]
-                    [ div [ class "wtoday", A.style "left" (String.fromInt (px model.today + dayW // 2) ++ "px") ] []
-                    , bar s
+                    [ if model.nowMin >= from && model.nowMin <= to then
+                        div [ class "wtoday", A.style "left" (String.fromInt (px model.nowMin) ++ "px") ] []
+
+                      else
+                        text ""
+                    , if inWindow s then
+                        bar s
+
+                      else
+                        text ""
                     ]
                 ]
     in
-    div [ class "wf", A.id "wf" ]
+    div [ class "wf", A.id "wf", A.style "--cw" (String.fromInt cellW ++ "px") ]
         (div [ class "wrow wruler" ]
-            [ span [ class "wlabel" ] [ text "" ]
+            [ span [ class "wlabel" ]
+                [ span [ class "zoomctl" ]
+                    [ span [ class "zbtn", onClick (ZoomBy -1) ] [ text "−" ]
+                    , text (" zoom: " ++ zoom.name ++ " ")
+                    , span [ class "zbtn", onClick (ZoomBy 1) ] [ text "+" ]
+                    ]
+                ]
             , div [ class "wtrack", A.style "width" (String.fromInt total ++ "px") ]
-                [ div [ class "wmonths" ] (List.map monthCell days)
-                , div [ class "wdays" ] (List.map cell days)
+                [ div [ class "wmonths" ] (List.indexedMap monthNode starts)
+                , div [ class "wdays" ] (List.indexedMap cellNode starts)
                 ]
             ]
             :: List.map row ss
         )
+
+
+clockOf : Model -> Timeline.Clock
+clockOf model =
+    { offset = model.offset, now = model.nowMin }
+
+
+cellMinutes : Model -> Int
+cellMinutes model =
+    (Timeline.zoomAt model.zoom).cell
+
+
+{-| Plan a task to the minute: show the new times at once, then store them.
+-}
+scheduleExact : Model -> Bead -> Timeline.Plan -> ( Model, Cmd Msg )
+scheduleExact model b p =
+    case model.current of
+        Just repo ->
+            ( { model
+                | beads =
+                    mapBeads
+                        (\x ->
+                            if x.id == b.id then
+                                { x
+                                    | dueMs = Just ((p.end - model.offset) * 60000)
+                                    , estMin = p.minutes
+                                    , due = Calendar.toIso (p.end // 1440)
+                                    , estDays = max 1 ((p.minutes + 1439) // 1440)
+                                }
+
+                            else
+                                x
+                        )
+                        model.beads
+              }
+            , postOp repo
+                [ ( "op", E.string "setSchedule" )
+                , ( "id", E.string b.id )
+                , ( "due", E.string (Timeline.isoUtc model.offset p.end) )
+                , ( "minutes", E.int p.minutes )
+                ]
+            )
+
+        Nothing ->
+            ( model, Cmd.none )
+
+
+{-|
+
+  - and -: a finer or coarser timeline, centered on the selected task (or now).
+
+-}
+zoomBy : Int -> Model -> ( Model, Cmd Msg )
+zoomBy d model =
+    if model.view /= WaterfallView then
+        ( { model | flash = Just "zoom works on the waterfall: SPC v w" }, Cmd.none )
+
+    else
+        let
+            z =
+                clampInt 0 (List.length Timeline.zooms - 1) (model.zoom + d)
+
+            focus =
+                case selected model of
+                    Just b ->
+                        (Timeline.plan (clockOf model) b).end
+
+                    Nothing ->
+                        model.nowMin
+
+            next =
+                { model | zoom = z, focusMin = Just focus, flash = Just ("timeline zoom: " ++ (Timeline.zoomAt z).name) }
+        in
+        ( next, focusScroll next )
+
+
+{-| Scroll the timeline so the focus time sits a little right of the labels.
+-}
+focusScroll : Model -> Cmd Msg
+focusScroll model =
+    case model.beads of
+        Ready bs ->
+            let
+                cell =
+                    cellMinutes model
+
+                focus =
+                    Maybe.withDefault model.nowMin model.focusMin
+
+                ( from, _ ) =
+                    Timeline.window cell focus (clockOf model) (Timeline.spans (clockOf model) bs)
+
+                x =
+                    260 + (focus - from) * cellW // cell - 320
+            in
+            Dom.getViewportOf "wf"
+                |> Task.andThen (\v -> Dom.setViewportOf "wf" (toFloat (max 0 x)) v.viewport.y)
+                |> Task.attempt (\_ -> NoOp)
+
+        _ ->
+            Cmd.none
+
+
+sectionsOf : Model -> List (List Bead)
+sectionsOf model =
+    case model.beads of
+        Ready bs ->
+            Nav.sections model.today model.view bs
+
+        _ ->
+            []
+
+
+{-| Select a bead from a motion like [[ or }: the open discussion follows it,
+and the view scrolls to show it.
+-}
+moveTo : Maybe String -> Model -> ( Model, Cmd Msg )
+moveTo target_ model =
+    case target_ of
+        Just id ->
+            let
+                next =
+                    { model | selId = Just id }
+            in
+            if model.detail /= Nothing then
+                openDetail id next
+
+            else
+                ( next, reveal next.view )
+
+        Nothing ->
+            ( model, Cmd.none )
+
+
+{-| zt, zz and zb: put the selected card or row at the top, middle or bottom.
+-}
+alignSelection : View -> Place -> Cmd Msg
+alignSelection which place =
+    let
+        ( container, pad ) =
+            case which of
+                WaterfallView ->
+                    ( "wf", 46 )
+
+                _ ->
+                    ( "main", 0 )
+    in
+    Task.map3 (\v box el -> ( v, box, el ))
+        (Dom.getViewportOf container)
+        (Dom.getElement container)
+        (Dom.getElement "sel")
+        |> Task.andThen
+            (\( v, box, el ) ->
+                Dom.setViewportOf container v.viewport.x (Scroll.align place pad (el.element.y - box.element.y + v.viewport.y) el.element.height v.viewport.height)
+            )
+        |> Task.attempt (\_ -> NoOp)
+
+
+{-| The second top bar: every view as a tab with its count; the current one is
+highlighted and opens up into its own numbers.
+-}
+viewTabs : Model -> Html Msg
+viewTabs model =
+    let
+        beads =
+            case model.beads of
+                Ready bs ->
+                    bs
+
+                _ ->
+                    []
+
+        tab v =
+            if v == model.view then
+                div [ class "tab current", onClick (GoView v) ]
+                    (span [ class "tabname" ] [ text (Keys.viewName v) ]
+                        :: List.map (\s -> span [ class "stat" ] [ text s ]) (Stats.summary model.today (clockOf model) v beads model.edges)
+                    )
+
+            else
+                div [ class "tab", onClick (GoView v) ]
+                    [ span [ class "tabname" ] [ text (Keys.viewName v) ]
+                    , span [ class "tabcount" ] [ text (Stats.tab model.today (clockOf model) v beads model.edges) ]
+                    ]
+    in
+    div [ class "tabs" ] (List.map tab viewOrder)
 
 
 {-| The selected card or row carries this id, so `reveal` can find it.
@@ -2052,15 +2339,15 @@ viewOrder =
     [ KanbanView, ListView, EpicsView, StoryMapView, RoadmapView, IterationsView, WaterfallView, GraphView, FlowView, MatrixView ]
 
 
-{-| Tab: the next view in the order of viewOrder, wrapping around.
+{-| gt, gT, Tab, [v and ]v: the view `d` steps along viewOrder, wrapping around.
 -}
-nextView : View -> View
-nextView v =
+stepView : Int -> View -> View
+stepView d v =
     let
         i =
             viewOrder |> List.indexedMap Tuple.pair |> List.filter (\( _, x ) -> x == v) |> List.head |> Maybe.map Tuple.first |> Maybe.withDefault 0
     in
-    viewOrder |> List.drop (modBy (List.length viewOrder) (i + 1)) |> List.head |> Maybe.withDefault KanbanView
+    viewOrder |> List.drop (modBy (List.length viewOrder) (i + d)) |> List.head |> Maybe.withDefault KanbanView
 
 
 {-| -}

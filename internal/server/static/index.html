@@ -121,11 +121,11 @@ ul { list-style: none; margin: 0; padding: 0; }
 .wrow.current .wlabel { background: var(--base02); }
 .wruler { position: sticky; top: 0; z-index: 5; height: 46px; background: var(--base01); border-bottom: 1px solid var(--base03); }
 .wruler .wlabel { background: var(--base01); cursor: default; }
-.wtrack { position: relative; flex: none; background-image: repeating-linear-gradient(to right, transparent 0, transparent 31px, color-mix(in srgb, var(--base02) 70%, transparent) 31px, color-mix(in srgb, var(--base02) 70%, transparent) 32px); }
+.wtrack { position: relative; flex: none; background-image: linear-gradient(to right, color-mix(in srgb, var(--base02) 70%, transparent) 1px, transparent 1px); background-size: var(--cw, 40px) 100%; }
 .wruler .wtrack { background-image: none; }
 .wmonths, .wdays { display: flex; height: 23px; }
-.wm { width: 32px; flex: none; overflow: visible; white-space: nowrap; font-size: 11px; color: var(--base0E); padding: 4px 0 0 2px; }
-.wd { width: 32px; flex: none; text-align: center; font-size: 11px; color: var(--base04); padding-top: 3px; border-left: 1px solid color-mix(in srgb, var(--base02) 70%, transparent); }
+.wm { width: var(--cw, 40px); flex: none; overflow: visible; white-space: nowrap; font-size: 11px; color: var(--base0E); padding: 4px 0 0 2px; }
+.wd { width: var(--cw, 40px); flex: none; text-align: center; font-size: 11px; color: var(--base04); padding-top: 3px; border-left: 1px solid color-mix(in srgb, var(--base02) 70%, transparent); }
 .wd.wend { color: var(--base03); }
 .wd.wnow { background: var(--base0D); color: var(--base00); font-weight: bold; border-radius: 3px; }
 .wtoday { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--base0D); opacity: .55; z-index: 1; }
@@ -202,6 +202,20 @@ ul { list-style: none; margin: 0; padding: 0; }
 @media (max-width: 1250px) { .hint:nth-child(n+8) { display: none; } }
 @media (max-width: 1000px) { .hint:nth-child(n+5) { display: none; } .stats .stat:nth-child(n+4) { display: none; } }
 @media (max-width: 760px) { .hints { display: none; } }
+
+/* second top bar: every view */
+.tabs { display: flex; align-items: stretch; background: var(--base00); border-bottom: 1px solid var(--base02); height: 32px; overflow: hidden; white-space: nowrap; }
+.tab { display: flex; align-items: center; gap: 8px; padding: 0 14px; cursor: pointer; color: var(--base04); font-size: 12px; border-bottom: 2px solid transparent; }
+.tab:hover { color: var(--base05); background: var(--base01); }
+.tab .tabname { font-family: ui-monospace, monospace; letter-spacing: .04em; }
+.tab .tabcount { background: var(--base02); color: var(--base05); border-radius: 999px; padding: 0 7px; font-size: 11px; }
+.tab.current { color: var(--base05); background: var(--base01); border-bottom-color: var(--base0D); }
+.tab.current .tabname { color: var(--base0D); font-weight: bold; }
+.tab.current .stat { color: var(--base05); }
+.tab.current .stat + .stat::before { content: "·"; color: var(--base04); margin-right: 8px; }
+.zoomctl { color: var(--base0E); font-size: 12px; }
+.zbtn { display: inline-block; width: 18px; text-align: center; border-radius: 4px; background: var(--base02); cursor: pointer; user-select: none; }
+.wd.wmid { border-left-color: var(--base03); }
 </style>
 </head>
 <body>

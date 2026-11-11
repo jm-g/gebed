@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -25,6 +26,7 @@ type opJSON struct {
 	Text     string `json:"text"`
 	Due      string `json:"due"`
 	Days     int    `json:"days"`
+	Minutes  int    `json:"minutes"`
 }
 
 func parseOp(o opJSON, user string) (store.Op, error) {
@@ -95,12 +97,12 @@ func parseOp(o opJSON, user string) (store.Op, error) {
 		}
 		return store.RemoveDep{From: from, On: on}, nil
 	case "setSchedule":
-		d, err := model.ParseDate(o.Due)
-		n, err2 := model.ParseDays(o.Days)
+		w, err := model.ParseWhen(o.Due)
+		min, err2 := scheduleMinutes(o.Days, o.Minutes)
 		if err := firstErr(needID(), err, err2); err != nil {
 			return nil, err
 		}
-		return store.SetSchedule{ID: id, Due: d, Days: n}, nil
+		return store.SetSchedule{ID: id, Due: w, Minutes: min}, nil
 	case "addComment":
 		b, err := model.ParseBody(o.Text)
 		au, err2 := model.ParseAuthor(user)
@@ -166,3 +168,19 @@ func (a *api) applyOp(w http.ResponseWriter, r *http.Request) {
 
 // OpNames lists every op parseOp accepts; the MCP server must expose each one.
 var OpNames = []string{"create", "setTitle", "setStatus", "setPriority", "addLabel", "removeLabel", "close", "reopen", "addDep", "addComment", "setSchedule", "removeDep"}
+
+// scheduleMinutes reads the length of a task: days or minutes, one of them.
+func scheduleMinutes(days, minutes int) (model.Minutes, error) {
+	switch {
+	case days != 0 && minutes != 0:
+		return model.Minutes{}, errors.New("give days or minutes, not both")
+	case days != 0:
+		d, err := model.ParseDays(days)
+		if err != nil {
+			return model.Minutes{}, err
+		}
+		return model.ParseMinutes(d.EstimateMinutes())
+	default:
+		return model.ParseMinutes(minutes)
+	}
+}

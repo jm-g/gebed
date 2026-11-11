@@ -130,6 +130,8 @@ type alias Bead =
     , deps : List Dep
     , due : String
     , estDays : Int
+    , dueMs : Maybe Int
+    , estMin : Int
     , epics : List EpicRef
     , createdMs : Int
     , updatedMs : Int
@@ -172,6 +174,8 @@ beadDecoder =
         |> andMap (D.field "deps" (D.list depDecoder))
         |> andMap (D.field "due" D.string)
         |> andMap (D.field "estDays" D.int)
+        |> andMap (D.field "dueMs" (D.nullable D.int))
+        |> andMap (D.field "estMin" D.int)
         |> andMap (D.field "epics" (D.list epicRefDecoder))
         |> andMap (D.field "createdMs" D.int)
         |> andMap (D.field "updatedMs" D.int)

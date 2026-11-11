@@ -53,7 +53,7 @@ Change:
 | `gebed_set_priority` | Priority 0 (critical) to 4 (backlog) |
 | `gebed_add_label` | Add a one-word label |
 | `gebed_remove_label` | Remove a label |
-| `gebed_set_schedule` | Plan a bead on the waterfall: delivery date `YYYY-MM-DD` and length in days. It starts that many days before delivery |
+| `gebed_set_schedule` | Plan a bead on the waterfall: delivery time (`YYYY-MM-DD`, or RFC3339 like `2026-11-20T14:30:00Z` for work that takes minutes) and length in `days` or `minutes`. It starts that many days before delivery |
 | `gebed_close` | End a bead, with a reason that cites the evidence |
 | `gebed_reopen` | Reopen a closed bead |
 | `gebed_add_dep` | `from` depends on `on`. Use `external:<repo>:<id>` for a bead of another repo |

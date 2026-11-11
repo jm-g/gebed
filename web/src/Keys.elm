@@ -12,10 +12,11 @@ module Keys exposing
     , viewName
     )
 
+import Scroll exposing (Place(..))
+
+
 {-| The key tree is data: one table drives both dispatch and the which-key popup.
 -}
-
-
 type View
     = ListView
     | KanbanView
@@ -58,7 +59,12 @@ type Action
     | Stretch Int
     | Find Bool
     | RepoStep Int
-    | NextView
+    | ViewStep Int
+    | Section Int
+    | SectionEdge Int
+    | Align Place
+    | Zoom Int
+    | ZoomReset
     | Scroll Int
     | ShowAllKeys
     | Sponsor
@@ -107,9 +113,16 @@ root =
     , leaf "s" "search (exact)" (Find False)
     , leaf "d" "scroll down" (Scroll 1)
     , leaf "u" "scroll up" (Scroll -1)
-    , leaf "[" "previous repo" (RepoStep -1)
-    , leaf "]" "next repo" (RepoStep 1)
-    , leaf "Tab" "next view" NextView
+    , group "[" "back" [ leaf "[" "previous section" (Section -1), leaf "r" "previous repo" (RepoStep -1), leaf "v" "previous view" (ViewStep -1) ]
+    , group "]" "forward" [ leaf "]" "next section" (Section 1), leaf "r" "next repo" (RepoStep 1), leaf "v" "next view" (ViewStep 1) ]
+    , leaf "{" "section start" (SectionEdge -1)
+    , leaf "}" "section end" (SectionEdge 1)
+    , group "z" "scroll" [ leaf "t" "selection to top" (Align AtTop), leaf "z" "selection to middle" (Align AtMiddle), leaf "b" "selection to bottom" (Align AtBottom) ]
+    , leaf "Tab" "next view" (ViewStep 1)
+    , leaf "+" "zoom in (waterfall)" (Zoom 1)
+    , leaf "=" "zoom in (waterfall)" (Zoom 1)
+    , leaf "-" "zoom out (waterfall)" (Zoom -1)
+    , leaf "0" "zoom: one day per cell" ZoomReset
     , leaf "h" "left" (Move Left)
     , leaf "j" "down" (Move Down)
     , leaf "k" "up" (Move Up)
@@ -126,7 +139,7 @@ root =
     , leaf "a" "ask implementer" (Compose Ask)
     , leaf "n" "new bead" (Compose NewBead)
     , leaf "?" "help" Help
-    , group "g" "go" [ leaf "g" "top" Top ]
+    , group "g" "go" [ leaf "g" "top" Top, leaf "t" "next view" (ViewStep 1), leaf "T" "previous view" (ViewStep -1) ]
     , group " "
         "leader"
         [ group "v"
@@ -300,7 +313,7 @@ barHints : View -> List ( String, String )
 barHints v =
     let
         common =
-            [ ( "f", "find" ), ( "s", "search" ), ( "[ ]", "repo" ), ( "Tab", "view" ), ( "⏎", "discuss" ), ( "c", "comment" ), ( "a", "ask" ), ( "n", "new" ), ( "SPC", "menu" ), ( "?", "keys" ) ]
+            [ ( "f", "find" ), ( "s", "search" ), ( "gt", "view" ), ( "[[ ]]", "section" ), ( "zz", "center" ), ( "⏎", "discuss" ), ( "c", "comment" ), ( "a", "ask" ), ( "n", "new" ), ( "SPC", "menu" ), ( "?", "keys" ) ]
     in
     case v of
         KanbanView ->
@@ -313,7 +326,7 @@ barHints v =
             [ ( "jk", "select" ), ( "HL", "status" ), ( "JK", "priority" ) ] ++ common
 
         WaterfallView ->
-            [ ( "jk", "row" ), ( "hl", "scroll" ), ( "HL", "move task" ), ( "<>", "shorten/extend" ), ( "drag", "move" ) ] ++ common
+            [ ( "jk", "row" ), ( "hl", "scroll" ), ( "HL", "move task" ), ( "<>", "shorten/extend" ), ( "drag", "move" ), ( "+ -", "zoom" ) ] ++ common
 
         EpicsView ->
             [ ( "jk", "move" ), ( "JK", "priority" ), ( "SPC e e", "set epic" ) ] ++ common
