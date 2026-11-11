@@ -28,6 +28,9 @@ order today view beads =
         ( MatrixView, _ ) ->
             List.concatMap (\p -> List.concatMap (\c -> Agile.matrixCell p c beads) (List.range 0 4)) (List.range 0 4)
 
+        ( MetricsView, _ ) ->
+            []
+
         ( FlowView, _ ) ->
             []
 

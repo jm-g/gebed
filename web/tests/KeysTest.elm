@@ -104,6 +104,8 @@ suite =
             \_ ->
                 [ press [ "[" ] "r", press [ "]" ] "r", press [ "[" ] "v", press [ "]" ] "v", press [] "+", press [] "-", press [] "0", press [] "Tab" ]
                     |> Expect.equal [ Run (RepoStep -1), Run (RepoStep 1), Run (ViewStep -1), Run (ViewStep 1), Run (Zoom 1), Run (Zoom -1), Run ZoomReset, Run (ViewStep 1) ]
+        , test "SPC v d opens the agent metrics view" <|
+            \_ -> press [ " ", "v" ] "d" |> Expect.equal (Run (Show MetricsView))
         , test "SPC S opens the sponsor page" <|
             \_ -> press [ " " ] "S" |> Expect.equal (Run Sponsor)
         , test "SPC Backspace opens the list" <|

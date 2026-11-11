@@ -302,6 +302,9 @@ func TestLinks(t *testing.T) {
 // name missing from OpNames would leave an op that MCP cannot reach.
 func TestOpNamesMatchParseOp(t *testing.T) {
 	for _, n := range OpNames {
+		if n == "report" { // handled before parseOp, because it is several edits
+			continue
+		}
 		if _, err := parseOp(opJSON{Op: n}, "vic"); err != nil && strings.Contains(err.Error(), "unknown op") {
 			t.Errorf("%s is listed but unknown to parseOp", n)
 		}
@@ -457,6 +460,105 @@ func TestSetScheduleMinutes(t *testing.T) {
 		ran = nil
 		if rec := get(h, "POST", "/api/repos/proj/ops", body); rec.Code != 422 || ran != nil {
 			t.Errorf("%s: %d %q", name, rec.Code, ran)
+		}
+	}
+}
+
+// reportServer's bead has a planner weight, an old outcome label and an old
+// complexity; every CLI call is recorded.
+func reportServer(t *testing.T, calls *[][]string) http.Handler {
+	t.Helper()
+	reg, _ := registry.Load(filepath.Join(t.TempDir(), "repos.json"))
+	dir := filepath.Join(t.TempDir(), "proj")
+	if err := os.MkdirAll(filepath.Join(dir, ".beads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reg.Add(dir); err != nil {
+		t.Fatal(err)
+	}
+	show := `[{"id":"x-1","title":"T","status":"open","priority":1,"issue_type":"task","labels":["weight:5","outcome:failure","complexity:2","ui"],"created_at":"2026-11-01T10:00:00Z","updated_at":"2026-11-01T10:00:00Z"}]`
+	return New(reg, func(_ context.Context, _, _ string, args ...string) ([]byte, error) {
+		*calls = append(*calls, args)
+		if args[0] == "show" {
+			return []byte(show), nil
+		}
+		return []byte(`{}`), nil
+	}, theme.Builtin, fakePeers{}, "vic")
+}
+
+func TestReportWritesLabelsAndTheReportComment(t *testing.T) {
+	var calls [][]string
+	h := reportServer(t, &calls)
+	body := `{"op":"report","id":"x-1","agent":"impl","outcome":"success","weight":13,"complexity":4,"minutes":42,"attempts":2,"findings":"found a race"}`
+	rec := get(h, "POST", "/api/repos/proj/ops", body)
+	if rec.Code != 200 {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+	var did []string
+	for _, c := range calls {
+		did = append(did, strings.Join(c[:min(len(c), 4)], " "))
+	}
+	all := strings.Join(did, "\n")
+	for _, want := range []string{
+		"label remove x-1 outcome:failure", // the old outcome goes
+		"label remove x-1 complexity:2",    // so does the old complexity, because a new one is reported
+		"label add x-1 outcome:success",
+		"label add x-1 complexity:4",
+		"comments add x-1 --author=impl",
+	} {
+		if !strings.Contains(all, want) {
+			t.Errorf("missing %q in:\n%s", want, all)
+		}
+	}
+	if strings.Contains(all, "weight:13") || strings.Contains(all, "weight:5") {
+		t.Errorf("the planner's weight must be left alone:\n%s", all)
+	}
+	last := calls[len(calls)-1]
+	if text := last[len(last)-1]; !strings.HasPrefix(text, `report: {"agent":"impl","outcome":"success"`) || !strings.Contains(text, "\nfound a race") {
+		t.Errorf("comment text %q", text)
+	}
+}
+
+func TestInvalidReportsChangeNothing(t *testing.T) {
+	for name, body := range map[string]string{
+		"no outcome":   `{"op":"report","id":"x-1"}`,
+		"weight 500":   `{"op":"report","id":"x-1","outcome":"success","weight":500}`,
+		"bad outcome":  `{"op":"report","id":"x-1","outcome":"great"}`,
+		"flag-like id": `{"op":"report","id":"--all","outcome":"success"}`,
+	} {
+		var calls [][]string
+		h := reportServer(t, &calls)
+		if rec := get(h, "POST", "/api/repos/proj/ops", body); rec.Code != 422 || len(calls) != 0 {
+			t.Errorf("%s: %d, ran %q", name, rec.Code, calls)
+		}
+	}
+}
+
+func TestMetricsEndpointReadsReportsFromComments(t *testing.T) {
+	reg, _ := registry.Load(filepath.Join(t.TempDir(), "repos.json"))
+	dir := filepath.Join(t.TempDir(), "proj")
+	if err := os.MkdirAll(filepath.Join(dir, ".beads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reg.Add(dir); err != nil {
+		t.Fatal(err)
+	}
+	h := New(reg, func(_ context.Context, _, _ string, args ...string) ([]byte, error) {
+		switch args[0] {
+		case "list":
+			return []byte(`{"issues":[{"id":"x-1","title":"T","status":"closed","priority":1,"issue_type":"task","labels":["weight:5"],"estimated_minutes":60,"created_at":"2026-11-01T10:00:00Z","updated_at":"2026-11-10T10:00:00Z","closed_at":"2026-11-10T10:00:00Z"}]}`), nil
+		case "comments":
+			return []byte(`[{"id":1,"issue_id":"x-1","author":"impl","text":"report: {\"agent\":\"impl\",\"outcome\":\"success\",\"minutes\":90,\"attempts\":2,\"capacity\":3}\nfound a race","created_at":"2026-11-10T09:00:00Z"},{"id":2,"issue_id":"x-1","author":"vic","text":"report: {nope","created_at":"2026-11-10T09:30:00Z"}]`), nil
+		case "show":
+			return []byte(`[{"id":"x-1","title":"T","status":"closed","priority":1,"issue_type":"task","created_at":"2026-11-01T10:00:00Z","updated_at":"2026-11-10T10:00:00Z"}]`), nil
+		}
+		return []byte(`[]`), nil
+	}, theme.Builtin, fakePeers{}, "vic")
+	rec := get(h, "GET", "/api/repos/proj/metrics", "")
+	body := rec.Body.String()
+	for _, want := range []string{`"reports":1`, `"successRate":100`, `"pointsDone":5`, `"capacity":3`, `"reworkRate":100`, `"estimateBias":50`, `"minutesPerPoint":18`} {
+		if rec.Code != 200 || !strings.Contains(body, want) {
+			t.Fatalf("missing %s in %d %s", want, rec.Code, body)
 		}
 	}
 }

@@ -12,21 +12,33 @@ import (
 
 // opJSON is the wire form of an edit; parseOp turns it into a validated store.Op.
 type opJSON struct {
-	Op       string `json:"op"`
-	ID       string `json:"id"`
-	From     string `json:"from"`
-	On       string `json:"on"`
-	Title    string `json:"title"`
-	Kind     string `json:"kind"`
-	Status   string `json:"status"`
-	Label    string `json:"label"`
-	Reason   string `json:"reason"`
-	Type     string `json:"type"`
-	Priority int    `json:"priority"`
-	Text     string `json:"text"`
-	Due      string `json:"due"`
-	Days     int    `json:"days"`
-	Minutes  int    `json:"minutes"`
+	Op         string `json:"op"`
+	ID         string `json:"id"`
+	From       string `json:"from"`
+	On         string `json:"on"`
+	Title      string `json:"title"`
+	Kind       string `json:"kind"`
+	Status     string `json:"status"`
+	Label      string `json:"label"`
+	Reason     string `json:"reason"`
+	Type       string `json:"type"`
+	Priority   int    `json:"priority"`
+	Text       string `json:"text"`
+	Due        string `json:"due"`
+	Days       int    `json:"days"`
+	Minutes    int    `json:"minutes"`
+	Agent      string `json:"agent"`
+	Outcome    string `json:"outcome"`
+	Weight     int    `json:"weight"`
+	Complexity int    `json:"complexity"`
+	Attempts   int    `json:"attempts"`
+	Tokens     int    `json:"tokens"`
+	CostCents  int    `json:"costCents"`
+	TestsPass  int    `json:"testsPass"`
+	TestsFail  int    `json:"testsFail"`
+	Capacity   int    `json:"capacity"`
+	Confidence int    `json:"confidence"`
+	Findings   string `json:"findings"`
 }
 
 func parseOp(o opJSON, user string) (store.Op, error) {
@@ -143,6 +155,10 @@ func (a *api) applyOp(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, err)
 		return
 	}
+	if in.Op == "report" {
+		a.applyReport(w, r, s, in)
+		return
+	}
 	op, err := parseOp(in, a.user)
 	if err != nil {
 		fail(w, http.StatusUnprocessableEntity, err)
@@ -167,7 +183,7 @@ func (a *api) applyOp(w http.ResponseWriter, r *http.Request) {
 }
 
 // OpNames lists every op parseOp accepts; the MCP server must expose each one.
-var OpNames = []string{"create", "setTitle", "setStatus", "setPriority", "addLabel", "removeLabel", "close", "reopen", "addDep", "addComment", "setSchedule", "removeDep"}
+var OpNames = []string{"create", "setTitle", "setStatus", "setPriority", "addLabel", "removeLabel", "close", "reopen", "addDep", "addComment", "setSchedule", "removeDep", "report"}
 
 // scheduleMinutes reads the length of a task: days or minutes, one of them.
 func scheduleMinutes(days, minutes int) (model.Minutes, error) {

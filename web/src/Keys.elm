@@ -28,6 +28,7 @@ type View
     | IterationsView
     | FlowView
     | MatrixView
+    | MetricsView
 
 
 type Dir
@@ -154,6 +155,7 @@ root =
             , leaf "i" "iterations" (Show IterationsView)
             , leaf "f" "flow metrics" (Show FlowView)
             , leaf "x" "impact/effort matrix" (Show MatrixView)
+            , leaf "d" "agent metrics" (Show MetricsView)
             ]
         , group "e"
             "edit"
@@ -306,6 +308,9 @@ viewName v =
         MatrixView ->
             "MATRIX"
 
+        MetricsView ->
+            "METRICS"
+
 
 {-| The always-visible hints of the status bar: the keys that matter in this view.
 -}
@@ -345,6 +350,9 @@ barHints v =
 
         MatrixView ->
             [ ( "jk", "move" ), ( "JK", "priority" ), ( "HL", "effort" ) ] ++ common
+
+        MetricsView ->
+            [ ( "SPC v d", "metrics" ) ] ++ common
 
 
 {-| Every key sequence that does something from normal mode, with what it does:

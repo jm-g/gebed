@@ -66,6 +66,9 @@ summary today clock view beads edges =
             in
             [ "lead time p50 " ++ String.fromInt f.p50 ++ "d", "p85 " ++ String.fromInt f.p85 ++ "d", n (List.sum (List.map .closed f.weeks)) "closed in 8 weeks" ]
 
+        MetricsView ->
+            [ n (outcomes beads) "reports", n (List.length (List.filter (\b -> weightOf b > 0) beads)) "weighed" ]
+
         MatrixView ->
             let
                 quick =
@@ -123,5 +126,20 @@ tab today clock view beads edges =
         FlowView ->
             k (List.sum (List.map .closed (Agile.flow today beads).weeks))
 
+        MetricsView ->
+            k (outcomes beads)
+
         MatrixView ->
             k (List.length (List.concatMap (\p -> List.concatMap (\c -> Agile.matrixCell p c beads) [ 1, 2 ]) [ 0, 1 ]))
+
+
+{-| Beads an agent has reported an outcome on: they carry an outcome: label.
+-}
+outcomes : List Bead -> Int
+outcomes =
+    List.length << List.filter (List.any (String.startsWith "outcome:") << .labels)
+
+
+weightOf : Bead -> Int
+weightOf b =
+    b.labels |> List.filter (String.startsWith "weight:") |> List.head |> Maybe.andThen (String.dropLeft 7 >> String.toInt) |> Maybe.withDefault 0

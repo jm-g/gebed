@@ -216,6 +216,28 @@ ul { list-style: none; margin: 0; padding: 0; }
 .zoomctl { color: var(--base0E); font-size: 12px; }
 .zbtn { display: inline-block; width: 18px; text-align: center; border-radius: 4px; background: var(--base02); cursor: pointer; user-select: none; }
 .wd.wmid { border-left-color: var(--base03); }
+
+/* agent metrics */
+.metrics { padding: 14px 18px; display: flex; flex-direction: column; gap: 18px; max-width: 1280px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+.kpi { background: var(--base01); border-radius: 8px; padding: 10px 12px; border-left: 3px solid var(--base03); }
+.kpi.good { border-left-color: var(--base0B); } .kpi.warn { border-left-color: var(--base0A); } .kpi.bad { border-left-color: var(--base08); }
+.kpival { font-size: 26px; font-weight: 600; font-family: ui-monospace, monospace; }
+.kpilabel { color: var(--base0E); font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
+.kpinote { color: var(--base04); font-size: 11px; margin-top: 2px; }
+.mgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 14px; }
+.panel { background: var(--base01); border-radius: 8px; padding: 10px 14px; }
+.panel .ctitle { color: var(--base0E); font-size: 12px; text-transform: uppercase; letter-spacing: .07em; margin-bottom: 8px; }
+.bars.small { height: 110px; width: auto; padding: 4px 0 0; background: none; }
+.outcomes { display: flex; flex-direction: column; gap: 6px; }
+.outrow { display: grid; grid-template-columns: 90px 1fr 80px; gap: 10px; align-items: center; font-size: 12px; }
+.outtrack { display: flex; background: var(--base02); border-radius: 4px; height: 10px; overflow: hidden; }
+.outfill { height: 100%; }
+.out-success { background: var(--base0B); } .out-failure { background: var(--base08); } .out-partial { background: var(--base0A); } .out-blocked { background: var(--base0E); }
+.outname.out-success { color: var(--base0B); background: none; } .outname.out-failure { color: var(--base08); background: none; } .outname.out-partial { color: var(--base0A); background: none; } .outname.out-blocked { color: var(--base0E); background: none; }
+.aging { display: flex; flex-direction: column; gap: 4px; }
+.agerow { display: grid; grid-template-columns: 90px 1fr 70px; gap: 10px; font-size: 12px; }
+.late { color: var(--base08); }
 </style>
 </head>
 <body>

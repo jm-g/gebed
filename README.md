@@ -37,6 +37,8 @@ A bead can depend on a bead in another repo. Type `repo:id` when you link, and t
 
 Every bead is a discussion. Comments are stored by `br`/`bd` in the repo, so when an agent runs `br comments add`, it shows up in the UI a couple of seconds later.
 
+Agents report what they measure with one call: outcome, weight, complexity, minutes, attempts, tokens, cost, tests, their own capacity, confidence and what they found. gebed keeps the full report in the bead and puts `outcome:`, `weight:` and `complexity:` labels on it, then turns it all into flow numbers in the METRICS tab: velocity, a forecast of when the work left will be done, success and rework rate, how far estimates are off, capacity and utilization, and cost per point.
+
 Write `@name` in a comment and gebed sends it to the running Claude Code session with that name, then tells you who got it. The agent answers in the same bead.
 
 Claude Code integration only works on Linux for now, because that's where gebed can find live sessions.

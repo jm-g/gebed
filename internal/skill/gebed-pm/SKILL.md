@@ -40,6 +40,7 @@ Read:
 | `gebed_links` | Every cross-repo link, each end resolved to title and status |
 | `gebed_sessions` | Live agent sessions that can receive a mention |
 | `gebed_themes` | Color schemes of the web UI |
+| `gebed_metrics` | Flow metrics of a repo from beads and reports |
 | `gebed_search` | Find beads in every repo by id, title, text, comments, labels, epic and dates. `mode`: `fuzzy` (letters in order) or `exact` (every word as written) |
 
 Change:
@@ -58,6 +59,7 @@ Change:
 | `gebed_reopen` | Reopen a closed bead |
 | `gebed_add_dep` | `from` depends on `on`. Use `external:<repo>:<id>` for a bead of another repo |
 | `gebed_remove_dep` | Remove a dependency; also how a bead leaves an epic |
+| `gebed_report` | Report what you measured and found on a bead (see Reporting) |
 | `gebed_comment` | Add to the discussion. An `@name` in the text sends it to that live session |
 
 A tool error is a normal result with the reason in it. Read the reason and fix the call. Do not repeat the same call.
@@ -82,3 +84,29 @@ An epic is a bead of kind `epic`. A bead belongs to it when it has a `parent-chi
 - Write one question per comment. Say what you need and by when it matters.
 - Name the bead and the repo in the text. The agent may not have your context.
 - Never put secrets in a comment. Comments are stored in the repo.
+
+## Reporting: measure everything, say what you find
+
+gebed turns what agents report into flow metrics: velocity, forecast, success and rework rate, estimate accuracy, capacity and cost per point. It can only compute what you tell it. **Every agent that works on a bead reports with `gebed_report`**: when it finishes, when it fails, and when it gets blocked. A failure is data, not something to hide.
+
+Rules:
+
+- Report what you measured. If you did not measure a number, leave it out. Never fill in a guess as a measurement, and never send 0 for "unknown".
+- Report at the end of every unit of work, not only at the end of the bead. Several reports on one bead are normal: each is one attempt or one stage.
+- `outcome` is the only required field: `success` (done and checked), `failure` (it did not work), `partial` (part of it works), `blocked` (you could not go on).
+- Put what you found in `findings`: risks, surprises, things that took longer than they should, follow-up work, and what the planner should know. A planner reads this text. Mention a colleague with `@name` to hand something over.
+
+| Field | What to send |
+|---|---|
+| `weight` | Size in points, from the Fibonacci scale 1, 2, 3, 5, 8, 13, 21. If the planner already weighed the bead (a `weight:N` label), that weight stays. |
+| `complexity` | How hard the work was, 1 trivial to 5 very hard. Report it after the work: it is a measurement, not a plan. |
+| `minutes` | Minutes of actual work, not waiting. |
+| `attempts` | How many tries until it worked. 2 or more counts as rework. |
+| `tokens`, `costCents` | Model tokens used and money spent, in cents. |
+| `testsPass`, `testsFail` | Tests you ran. |
+| `capacity` | How many beads you can work on at once. Send it again when it changes. |
+| `confidence` | Percent sure the result is right. Under 60 is flagged to the planner. |
+
+gebed shows the outcome, weight and complexity as `outcome:`, `weight:` and `complexity:` labels on the bead, and keeps the whole report as a comment, so `br` and `bd` see it too.
+
+A planner reads `gebed_metrics` before planning. It says how many points the team finishes a week, how long the work left will take at that pace, how often work succeeds or has to be redone, how far estimates are off, how busy the agents are against their reported capacity, and which work in progress has not moved for the longest.

@@ -15,6 +15,7 @@ import Json.Decode as D
 import Json.Encode as E
 import Keys exposing (Action(..), ComposeKind(..), Dir(..), Outcome(..), View(..))
 import Layout
+import Metrics exposing (Metrics)
 import Nav
 import Schedule
 import Scroll exposing (Place(..))
@@ -85,6 +86,7 @@ type alias Model =
     , sessions : List Session
     , version : Maybe String
     , flash : Maybe String
+    , metrics : Maybe Metrics
     , edges : List Edge
     }
 
@@ -133,6 +135,7 @@ type Msg
     | MentionNext
     | GotClock Int Int Int
     | GoView View
+    | GotMetrics String (Result Http.Error Metrics)
     | ZoomBy Int
     | Select String
     | DragStart String Float
@@ -174,6 +177,7 @@ main =
                   , sessions = []
                   , version = Nothing
                   , flash = Nothing
+                  , metrics = Nothing
                   , edges = []
                   }
                 , Cmd.batch [ getRepos, getThemes, getClock ]
@@ -440,6 +444,12 @@ refresh model =
                         else
                             []
                        )
+                    ++ (if model.view == MetricsView then
+                            [ getMetrics name ]
+
+                        else
+                            []
+                       )
                 )
 
 
@@ -504,6 +514,18 @@ update msg model =
 
         GoView v ->
             run (Show v) model
+
+        GotMetrics name result ->
+            if model.current /= Just name then
+                ( model, Cmd.none )
+
+            else
+                case result of
+                    Ok m ->
+                        ( { model | metrics = Just m }, Cmd.none )
+
+                    Err e ->
+                        ( { model | flash = Just ("metrics: " ++ httpError e) }, Cmd.none )
 
         ZoomBy d ->
             zoomBy d model
@@ -591,7 +613,7 @@ update msg model =
             ( { model | flash = Just ("edges: " ++ httpError e) }, Cmd.none )
 
         Pick name ->
-            ( { model | current = Just name, beads = Loading, selId = Nothing, detail = Nothing, version = Nothing }
+            ( { model | current = Just name, beads = Loading, metrics = Nothing, selId = Nothing, detail = Nothing, version = Nothing }
             , getBeads name
             )
 
@@ -991,6 +1013,9 @@ run action model =
                     ( GraphView, Just name ) ->
                         getEdges name
 
+                    ( MetricsView, Just name ) ->
+                        getMetrics name
+
                     _ ->
                         Cmd.none
                 , reveal v
@@ -1322,6 +1347,9 @@ viewBodyWith model beads =
 
         WaterfallView ->
             [ viewWaterfall model sel beads ]
+
+        MetricsView ->
+            [ Charts.viewMetrics model.metrics ]
 
         EpicsView ->
             [ Charts.viewEpics Select sel (Agile.epicGroups beads) ]
@@ -2336,7 +2364,7 @@ focusFinder =
 
 viewOrder : List View
 viewOrder =
-    [ KanbanView, ListView, EpicsView, StoryMapView, RoadmapView, IterationsView, WaterfallView, GraphView, FlowView, MatrixView ]
+    [ KanbanView, ListView, EpicsView, StoryMapView, RoadmapView, IterationsView, WaterfallView, GraphView, FlowView, MetricsView, MatrixView ]
 
 
 {-| gt, gT, Tab, [v and ]v: the view `d` steps along viewOrder, wrapping around.
@@ -2408,3 +2436,11 @@ viewAllKeys model =
                     )
                 ]
             ]
+
+
+getMetrics : String -> Cmd Msg
+getMetrics name =
+    Http.get
+        { url = repoUrl name "/metrics"
+        , expect = Http.expectJson (GotMetrics name) Metrics.decoder
+        }

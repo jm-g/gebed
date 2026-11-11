@@ -132,6 +132,30 @@ var tools = []tool{
 		func(a args) call {
 			return call{"GET", "/api/search?mode=" + url.QueryEscape(a.s("mode")) + "&q=" + url.QueryEscape(a.s("query")), nil}
 		}},
+	{"gebed_report", "Report what you measured and found on a bead: outcome, weight, complexity, minutes, attempts, tokens, cost, tests, your capacity, confidence and findings. Send it when you finish, fail or get blocked. Leave out any number you did not measure.",
+		[]prop{repo, beadID,
+			{"outcome", "string", "success, failure, partial or blocked.", true},
+			{"agent", "string", "Your session name.", false},
+			{"weight", "integer", "Size in points: 1, 2, 3, 5, 8, 13, 21 ... (1 to 100).", false},
+			{"complexity", "integer", "How hard it was: 1 trivial to 5 very hard.", false},
+			{"minutes", "integer", "Minutes of actual work.", false},
+			{"attempts", "integer", "Tries until it worked, 1 or more.", false},
+			{"tokens", "integer", "Model tokens used.", false},
+			{"costCents", "integer", "Money spent, in cents.", false},
+			{"testsPass", "integer", "Tests that passed.", false},
+			{"testsFail", "integer", "Tests that failed.", false},
+			{"capacity", "integer", "How many beads you can work on at once.", false},
+			{"confidence", "integer", "Percent sure the result is right, 1 to 100.", false},
+			{"findings", "string", "What you found: risks, surprises, follow-ups, what the planner should know.", false}},
+		func(a args) call {
+			f := map[string]any{"id": a.s("id"), "outcome": a.s("outcome"), "agent": a.s("agent"), "findings": a.s("findings")}
+			for _, k := range []string{"weight", "complexity", "minutes", "attempts", "tokens", "costCents", "testsPass", "testsFail", "capacity", "confidence"} {
+				f[k] = a.i(k)
+			}
+			return op("report", a, f)
+		}},
+	{"gebed_metrics", "Flow metrics of a repo, computed from beads and agent reports: velocity, forecast, success and rework rate, estimate accuracy, capacity, aging work, cost per point.", []prop{repo},
+		func(a args) call { return call{"GET", "/api/repos/" + esc(a.s("repo")) + "/metrics", nil} }},
 	{"gebed_comment", "Add a comment to a bead's discussion. An @name in the text sends the comment to the live session with that name; the answer lists who received it.",
 		[]prop{repo, beadID, {"text", "string", "The comment. Mention an implementer with @name.", true}},
 		func(a args) call { return op("addComment", a, map[string]any{"id": a.s("id"), "text": a.s("text")}) }},

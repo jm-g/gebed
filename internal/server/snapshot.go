@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"gebed/internal/metrics"
 	"strings"
 	"sync"
 
@@ -16,13 +17,14 @@ import (
 // the store fingerprint changes, so br and bd are asked once per change and not
 // once per request.
 type snap struct {
-	fp    string
-	beads []model.Bead
-	edges []model.Edge
-	epics map[string][]epicJSON // bead id -> the epics it belongs to
-	docs  []search.Doc          // built on first search, or by the warm-up
-	built bool
-	warm  bool // a warm-up is running or done
+	fp      string
+	beads   []model.Bead
+	edges   []model.Edge
+	epics   map[string][]epicJSON // bead id -> the epics it belongs to
+	docs    []search.Doc          // built on first search, or by the warm-up
+	reports [][]metrics.Stamped   // the agents' reports per bead (same order as beads), built with the docs
+	built   bool
+	warm    bool // a warm-up is running or done
 }
 
 type epicJSON struct {
@@ -108,6 +110,7 @@ func (a *api) searchDocs(ctx context.Context, repo registry.Repo) ([]search.Doc,
 		return nil, err
 	}
 	docs := make([]search.Doc, len(s.beads))
+	reps := make([][]metrics.Stamped, len(s.beads))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, docWorkers)
 	var firstErr error
@@ -127,6 +130,7 @@ func (a *api) searchDocs(ctx context.Context, repo registry.Repo) ([]search.Doc,
 				errMu.Unlock()
 			}
 			cs, _ := st.Comments(ctx, b.ID) // a bead without readable comments is still found by the rest
+			reps[i] = reportsOf(cs)
 			docs[i] = docOf(repo.Name, full, s.epics[b.ID.String()], cs)
 		}()
 	}
@@ -136,7 +140,7 @@ func (a *api) searchDocs(ctx context.Context, repo registry.Repo) ([]search.Doc,
 		return docs, nil
 	}
 	a.snaps.mu.Lock()
-	s.docs, s.built = docs, true
+	s.docs, s.reports, s.built = docs, reps, true
 	a.snaps.mu.Unlock()
 	return docs, nil
 }
@@ -185,4 +189,17 @@ func (a *api) warmDocs(repo registry.Repo, s *snap) {
 	s.warm = true
 	a.snaps.mu.Unlock()
 	go func() { _, _ = a.searchDocs(context.Background(), repo) }() // a failure here only means the first search builds them itself
+}
+
+// reportsOf picks the agent reports out of a bead's comments, oldest first. A
+// comment that looks like a report but is invalid is left out: it is still a
+// comment in the discussion.
+func reportsOf(cs []model.Comment) []metrics.Stamped {
+	var out []metrics.Stamped
+	for _, c := range cs {
+		if r, ok, err := model.ParseReport(c.Body.String()); ok && err == nil {
+			out = append(out, metrics.Stamped{Report: r, At: c.Created})
+		}
+	}
+	return out
 }
