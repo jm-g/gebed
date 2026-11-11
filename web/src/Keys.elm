@@ -61,6 +61,7 @@ type Action
     | NextView
     | Scroll Int
     | ShowAllKeys
+    | Sponsor
     | Show View
     | NextTheme
     | Reload
@@ -168,6 +169,7 @@ root =
         , group "t" "theme" [ leaf "n" "next theme" NextTheme ]
         , leaf "r" "reload" Reload
         , leaf "Backspace" "ALL keys" ShowAllKeys
+        , leaf "S" "Sponsor <3 (opens in a new tab)" Sponsor
         ]
     ]
 

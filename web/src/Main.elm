@@ -1,4 +1,4 @@
-module Main exposing (main)
+port module Main exposing (main)
 
 import Agile
 import Board
@@ -27,6 +27,17 @@ import Time
 import Types exposing (Bead, Comment, Delivery, Edge, Hit, Repo, Session, statusLabel)
 import Url
 import Widgets exposing (chips, dueText, prioBadge, statusClass)
+
+
+{-| Asks the page to open a link in a new tab. The page only follows the sponsor
+link, so no other text can make it open anything.
+-}
+port openUrl : String -> Cmd msg
+
+
+sponsorUrl : String
+sponsorUrl =
+    "https://github.com/sponsors/vic"
 
 
 type Loaded a
@@ -917,6 +928,9 @@ run action model =
         ShowAllKeys ->
             ( { model | allKeys = True, pending = [] }, Cmd.none )
 
+        Sponsor ->
+            ( model, openUrl sponsorUrl )
+
         Scroll dir ->
             ( model
             , scrollPane
@@ -1657,7 +1671,7 @@ viewBar model =
                 (\( k, label ) -> span [ class "hint" ] [ span [ class "key" ] [ text k ], text (" " ++ label) ])
                 (Keys.barHints model.view)
             )
-        , Html.a [ class "sponsor", A.href "https://github.com/sponsors/vic", A.target "_blank", A.rel "noopener noreferrer" ] [ text "Sponsor <3" ]
+        , Html.a [ class "sponsor", A.href sponsorUrl, A.target "_blank", A.rel "noopener noreferrer" ] [ text "Sponsor <3" ]
         ]
 
 

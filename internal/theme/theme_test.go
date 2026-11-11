@@ -20,10 +20,15 @@ func TestBuiltinValid(t *testing.T) {
 	if len(bs) < 2 {
 		t.Fatalf("got %d builtin schemes", len(bs))
 	}
+	systems := map[string]int{}
 	for _, s := range bs {
-		if s.System != "base16" || s.Palette["base00"][0] != '#' {
+		systems[s.System]++
+		if s.Palette["base00"][0] != '#' {
 			t.Errorf("%s: %+v", s.Name, s)
 		}
+	}
+	if systems["base16"] < 2 || systems["base24"] < 1 {
+		t.Errorf("want at least two base16 and one base24 builtin scheme, got %v", systems)
 	}
 }
 

@@ -85,6 +85,11 @@ suite =
                 Schedule.spans today [ bead "late" "2026-12-01" 1, bead "early" "2026-11-10" 1 ]
                     |> List.map (.bead >> .id)
                     |> Expect.equal [ "early", "late" ]
+        , test "unscheduled beads come after the scheduled ones, whatever their ids" <|
+            \_ ->
+                Schedule.spans today [ bead "a" "" 0, bead "b" "2026-12-01" 1, bead "c" "" 0 ]
+                    |> List.map (.bead >> .id)
+                    |> Expect.equal [ "b", "a", "c" ]
         , test "the window always shows today and at least 42 days" <|
             \_ ->
                 let

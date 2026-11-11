@@ -199,11 +199,20 @@ ul { list-style: none; margin: 0; padding: 0; }
 .allkeys { columns: 3 320px; column-gap: 24px; margin-top: 8px; }
 .keyrow { display: flex; gap: 12px; padding: 2px 0; break-inside: avoid; }
 .keyrow .keys { color: var(--base0D); font-family: ui-monospace, monospace; min-width: 8.5em; }
+@media (max-width: 1250px) { .hint:nth-child(n+8) { display: none; } }
+@media (max-width: 1000px) { .hint:nth-child(n+5) { display: none; } .stats .stat:nth-child(n+4) { display: none; } }
+@media (max-width: 760px) { .hints { display: none; } }
 </style>
 </head>
 <body>
 <div id="app"></div>
 <script src="app.js"></script>
-<script>Elm.Main.init({ node: document.getElementById("app") });</script>
+<script>
+const app = Elm.Main.init({ node: document.getElementById("app") });
+// the only link the app may open: the sponsor page
+app.ports.openUrl.subscribe((u) => {
+  if (typeof u === "string" && u.startsWith("https://github.com/sponsors/")) window.open(u, "_blank", "noopener,noreferrer");
+});
+</script>
 </body>
 </html>

@@ -6965,7 +6965,7 @@ var $author$project$Main$Ready = function (a) {
 	return {$: 2, a: a};
 };
 var $author$project$Keys$Show = function (a) {
-	return {$: 11, a: a};
+	return {$: 12, a: a};
 };
 var $elm$core$Maybe$andThen = F2(
 	function (callback, maybeValue) {
@@ -7877,7 +7877,10 @@ var $author$project$Schedule$spans = F2(
 		return A2(
 			$elm$core$List$sortBy,
 			function (s) {
-				return _Utils_Tuple2(s.cg, s.bs.a_);
+				return _Utils_Tuple3(
+					s.bk ? 0 : 1,
+					s.cg,
+					s.bs.a_);
 			},
 			A2(
 				$elm$core$List$map,
@@ -8561,6 +8564,7 @@ var $author$project$Main$openHit = F2(
 						$author$project$Main$getEdges(h.aP)
 					])));
 	});
+var $author$project$Main$openUrl = _Platform_outgoingPort('openUrl', $elm$json$Json$Encode$string);
 var $author$project$Schedule$plan = F2(
 	function (today, b) {
 		return {
@@ -8608,29 +8612,29 @@ var $author$project$Keys$Bump = function (a) {
 };
 var $author$project$Keys$ClearEpic = 7;
 var $author$project$Keys$Compose = function (a) {
-	return {$: 16, a: a};
+	return {$: 17, a: a};
 };
 var $author$project$Keys$Discuss = 1;
 var $author$project$Keys$Down = 3;
 var $author$project$Keys$Find = function (a) {
 	return {$: 6, a: a};
 };
-var $author$project$Keys$Help = {$: 14};
+var $author$project$Keys$Help = {$: 15};
 var $author$project$Keys$Left = 0;
 var $author$project$Keys$Link = 4;
 var $author$project$Keys$Move = function (a) {
 	return {$: 0, a: a};
 };
-var $author$project$Keys$NextTheme = {$: 12};
+var $author$project$Keys$NextTheme = {$: 13};
 var $author$project$Keys$NextView = {$: 8};
-var $author$project$Keys$OpenDetail = {$: 15};
+var $author$project$Keys$OpenDetail = {$: 16};
 var $author$project$Keys$Push = function (a) {
 	return {$: 3, a: a};
 };
-var $author$project$Keys$Reload = {$: 13};
+var $author$project$Keys$Reload = {$: 14};
 var $author$project$Keys$RemoveLabel = 9;
 var $author$project$Keys$Rename = 3;
-var $author$project$Keys$Reopen = {$: 19};
+var $author$project$Keys$Reopen = {$: 20};
 var $author$project$Keys$RepoStep = function (a) {
 	return {$: 7, a: a};
 };
@@ -8640,12 +8644,13 @@ var $author$project$Keys$Scroll = function (a) {
 };
 var $author$project$Keys$SetEpic = 6;
 var $author$project$Keys$SetPriority = function (a) {
-	return {$: 18, a: a};
+	return {$: 19, a: a};
 };
 var $author$project$Keys$SetStatus = function (a) {
-	return {$: 17, a: a};
+	return {$: 18, a: a};
 };
 var $author$project$Keys$ShowAllKeys = {$: 10};
+var $author$project$Keys$Sponsor = {$: 11};
 var $author$project$Keys$Stretch = function (a) {
 	return {$: 5, a: a};
 };
@@ -8951,7 +8956,8 @@ var $author$project$Keys$root = _List_fromArray(
 						A3($author$project$Keys$leaf, 'n', 'next theme', $author$project$Keys$NextTheme)
 					])),
 				A3($author$project$Keys$leaf, 'r', 'reload', $author$project$Keys$Reload),
-				A3($author$project$Keys$leaf, 'Backspace', 'ALL keys', $author$project$Keys$ShowAllKeys)
+				A3($author$project$Keys$leaf, 'Backspace', 'ALL keys', $author$project$Keys$ShowAllKeys),
+				A3($author$project$Keys$leaf, 'S', 'Sponsor <3 (opens in a new tab)', $author$project$Keys$Sponsor)
 			]))
 	]);
 var $author$project$Keys$bindingsAt = function (path) {
@@ -9343,6 +9349,7 @@ var $author$project$Schedule$slide = F3(
 			p,
 			{as: p.as + delta});
 	});
+var $author$project$Main$sponsorUrl = 'https://github.com/sponsors/vic';
 var $author$project$Nav$at = F2(
 	function (i, xs) {
 		return $elm$core$List$head(
@@ -9827,6 +9834,10 @@ var $author$project$Main$run = F2(
 							model,
 							{ao: true, F: _List_Nil}),
 						$elm$core$Platform$Cmd$none);
+				case 11:
+					return _Utils_Tuple2(
+						model,
+						$author$project$Main$openUrl($author$project$Main$sponsorUrl));
 				case 9:
 					var dir = action.a;
 					return _Utils_Tuple2(
@@ -9835,7 +9846,7 @@ var $author$project$Main$run = F2(
 							$author$project$Main$scrollPane,
 							(!_Utils_eq(model.t, $elm$core$Maybe$Nothing)) ? 'detail' : 'main',
 							dir));
-				case 11:
+				case 12:
 					var v = action.a;
 					return _Utils_Tuple2(
 						_Utils_update(
@@ -9851,7 +9862,7 @@ var $author$project$Main$run = F2(
 								return $elm$core$Platform$Cmd$none;
 							}
 						}());
-				case 12:
+				case 13:
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
@@ -9865,17 +9876,17 @@ var $author$project$Main$run = F2(
 									model.aR + 1)
 							}),
 						$elm$core$Platform$Cmd$none);
-				case 13:
+				case 14:
 					return _Utils_Tuple2(
 						model,
 						$author$project$Main$refresh(model));
-				case 14:
+				case 15:
 					return _Utils_Tuple2(
 						_Utils_update(
 							model,
 							{U: !model.U}),
 						$elm$core$Platform$Cmd$none);
-				case 15:
+				case 16:
 					var _v46 = _Utils_Tuple2(
 						$author$project$Main$selected(model),
 						model.d);
@@ -9902,7 +9913,7 @@ var $author$project$Main$run = F2(
 					} else {
 						return _Utils_Tuple2(model, $elm$core$Platform$Cmd$none);
 					}
-				case 16:
+				case 17:
 					switch (action.a) {
 						case 5:
 							var _v47 = action.a;
@@ -9953,7 +9964,7 @@ var $author$project$Main$run = F2(
 								return _Utils_Tuple2(model, $elm$core$Platform$Cmd$none);
 							}
 					}
-				case 17:
+				case 18:
 					if (action.a === 'closed') {
 						return A2(
 							$author$project$Main$edit,
@@ -9989,7 +10000,7 @@ var $author$project$Main$run = F2(
 									]);
 							});
 					}
-				case 18:
+				case 19:
 					var n = action.a;
 					return A2(
 						$author$project$Main$edit,
@@ -11553,7 +11564,7 @@ var $author$project$Main$viewBar = function (model) {
 				_List_fromArray(
 					[
 						$elm$html$Html$Attributes$class('sponsor'),
-						$elm$html$Html$Attributes$href('https://github.com/sponsors/vic'),
+						$elm$html$Html$Attributes$href($author$project$Main$sponsorUrl),
 						$elm$html$Html$Attributes$target('_blank'),
 						$elm$html$Html$Attributes$rel('noopener noreferrer')
 					]),

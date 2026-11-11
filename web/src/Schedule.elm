@@ -78,13 +78,23 @@ spanOf today b =
             { bead = b, start = today, end = today, scheduled = False }
 
 
-{-| Rows in time order: by start day, then id.
+{-| Rows in time order: scheduled work by start day first, then the unscheduled.
 -}
 spans : Int -> List Bead -> List Span
 spans today beads =
     beads
         |> List.map (spanOf today)
-        |> List.sortBy (\s -> ( s.start, s.bead.id ))
+        |> List.sortBy
+            (\s ->
+                ( if s.scheduled then
+                    0
+
+                  else
+                    1
+                , s.start
+                , s.bead.id
+                )
+            )
 
 
 {-| The days the timeline shows: a week before the earliest start or today, and

@@ -94,10 +94,12 @@ suite =
                 , List.member [ " ", "Backspace" ] paths
                 )
                     |> Expect.equal ( True, True )
+        , test "SPC S opens the sponsor page" <|
+            \_ -> press [ " " ] "S" |> Expect.equal (Run Sponsor)
         , test "SPC Backspace opens the list" <|
             \_ -> press [ " " ] "Backspace" |> Expect.equal (Run ShowAllKeys)
         , test "leader hints list the groups" <|
             \_ ->
                 hints [ " " ]
-                    |> Expect.equal [ ( "v", "view …" ), ( "e", "edit …" ), ( "p", "project …" ), ( "t", "theme …" ), ( "r", "reload" ), ( "⌫", "ALL keys" ) ]
+                    |> Expect.equal [ ( "v", "view …" ), ( "e", "edit …" ), ( "p", "project …" ), ( "t", "theme …" ), ( "r", "reload" ), ( "⌫", "ALL keys" ), ( "S", "Sponsor <3 (opens in a new tab)" ) ]
         ]
