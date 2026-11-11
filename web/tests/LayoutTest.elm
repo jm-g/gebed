@@ -20,6 +20,8 @@ bead id created closed =
     , depCount = 0
     , dependentCount = 0
     , deps = []
+    , due = ""
+    , estDays = 0
     , createdMs = created
     , updatedMs = created + 10
     , closedMs = closed
@@ -76,18 +78,4 @@ suite =
                     |> List.map (.bead >> .id)
                     |> List.sort
                     |> Expect.equal [ "a", "b", "c" ]
-        , test "waterfall bars scale to the whole span" <|
-            \_ ->
-                let
-                    bs =
-                        Layout.bars [ bead "a" 0 (Just 50), bead "b" 50 (Just 100) ]
-                in
-                bs
-                    |> List.map (\b -> ( b.bead.id, round b.startPct, round b.widthPct ))
-                    |> Expect.equal [ ( "a", 0, 50 ), ( "b", 50, 50 ) ]
-        , test "an open bead ends at its last update, with a visible width" <|
-            \_ ->
-                Layout.bars [ bead "a" 0 Nothing ]
-                    |> List.map (\b -> b.widthPct > 0)
-                    |> Expect.equal [ True ]
         ]

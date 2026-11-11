@@ -1,7 +1,7 @@
 module KeysTest exposing (suite)
 
 import Expect
-import Keys exposing (Action(..), ComposeKind(..), Outcome(..), View(..), hints, press)
+import Keys exposing (Action(..), ComposeKind(..), Dir(..), Outcome(..), View(..), hints, press)
 import Test exposing (Test, describe, test)
 
 
@@ -9,7 +9,7 @@ suite : Test
 suite =
     describe "Keys"
         [ test "single key runs" <|
-            \_ -> press [] "j" |> Expect.equal (Run Down)
+            \_ -> press [] "j" |> Expect.equal (Run (Move Down))
         , test "prefix waits" <|
             \_ -> press [] "g" |> Expect.equal (Wait [ "g" ])
         , test "gg is top" <|
@@ -40,6 +40,11 @@ suite =
             \_ ->
                 [ press [] "c", press [] "a", press [] "n" ]
                     |> Expect.equal [ Run (Compose Discuss), Run (Compose Ask), Run (Compose NewBead) ]
+        , test "hjkl move, HJKL act on the card" <|
+            \_ ->
+                [ press [] "h", press [] "j", press [] "k", press [] "l", press [] "H", press [] "L", press [] "J", press [] "K", press [] "<", press [] ">" ]
+                    |> Expect.equal
+                        [ Run (Move Left), Run (Move Down), Run (Move Up), Run (Move Right), Run (Push -1), Run (Push 1), Run (Bump 1), Run (Bump -1), Run (Stretch -1), Run (Stretch 1) ]
         , test "leader hints list the groups" <|
             \_ ->
                 hints [ " " ]

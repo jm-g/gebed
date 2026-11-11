@@ -24,6 +24,10 @@ fmt:
 dev:
     watchexec -e elm,go -r -- just build
 
+run *args="":
+   just build
+   bin/gebed {{args}}
+
 # The committed bundle must match the Elm source; run after changing web/
 bundle-fresh:
     cd web && elm make src/Main.elm --optimize --output=/tmp/gebed-app.js

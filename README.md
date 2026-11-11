@@ -17,9 +17,13 @@ It remembers the repos you gave it. Open the address and you're in.
 
 ## Moving around
 
-It's keyboard first. `j` and `k` move, `gg` and `G` jump, `Enter` opens a bead. Press `SPC` and a little popup shows what each next key does, so you don't have to memorize anything. `?` lists them all.
+It opens on a kanban board. It's keyboard first, like vim: `h` `j` `k` `l` move between and inside the columns, and the bar at the top always shows the mode (`-NORMAL-`), a few numbers about the view, and the keys that matter right now.
 
-`SPC v` changes the view: list, kanban, dependency graph or waterfall. `SPC e` edits the selected bead (status, priority, title, labels, links). `n` makes a new one.
+The capital letters move things. `H` and `L` move the selected card to the column on its left or right, and `J` and `K` lower or raise its priority. `Enter` opens the bead's discussion, `c` comments, `a` asks the agent, `n` makes a new bead. `SPC` opens a little popup that shows what each next key does, and `?` lists them all.
+
+`SPC v` changes the view: kanban, list, dependency graph or waterfall. `SPC e` edits the rest (title, labels, links).
+
+The waterfall has a time ruler. Each task has a delivery date and a length, so its bar starts that many days earlier. Drag a bar, or press `H` and `L`, to move it a day at a time, and press `<` and `>` to shorten or extend it. The dates are saved in the bead (`due` and the estimate), so `br` and `bd` see them too.
 
 Colors come from base16 and base24 schemes, `SPC t n` cycles them. Drop your own `.yaml` files in `~/.config/gebed/themes/`.
 

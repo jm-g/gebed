@@ -1,10 +1,13 @@
 module Keys exposing
     ( Action(..)
     , ComposeKind(..)
+    , Dir(..)
     , Outcome(..)
     , View(..)
+    , barHints
     , hints
     , press
+    , viewName
     )
 
 {-| The key tree is data: one table drives both dispatch and the which-key popup.
@@ -16,6 +19,13 @@ type View
     | KanbanView
     | GraphView
     | WaterfallView
+
+
+type Dir
+    = Left
+    | Right
+    | Up
+    | Down
 
 
 type ComposeKind
@@ -30,10 +40,12 @@ type ComposeKind
 
 
 type Action
-    = Down
-    | Up
+    = Move Dir
     | Top
     | Bottom
+    | Push Int
+    | Bump Int
+    | Stretch Int
     | Show View
     | NextTheme
     | Reload
@@ -75,8 +87,16 @@ group key label bindings =
 
 root : List Binding
 root =
-    [ leaf "j" "down" Down
-    , leaf "k" "up" Up
+    [ leaf "h" "left" (Move Left)
+    , leaf "j" "down" (Move Down)
+    , leaf "k" "up" (Move Up)
+    , leaf "l" "right" (Move Right)
+    , leaf "H" "move card left" (Push -1)
+    , leaf "L" "move card right" (Push 1)
+    , leaf "J" "lower priority" (Bump 1)
+    , leaf "K" "raise priority" (Bump -1)
+    , leaf "<" "shorten task" (Stretch -1)
+    , leaf ">" "extend task" (Stretch 1)
     , leaf "G" "bottom" Bottom
     , leaf "Enter" "open discussion" OpenDetail
     , leaf "c" "comment" (Compose Discuss)
@@ -198,3 +218,41 @@ prefixMark e =
 
         Do _ ->
             ""
+
+
+viewName : View -> String
+viewName v =
+    case v of
+        ListView ->
+            "LIST"
+
+        KanbanView ->
+            "KANBAN"
+
+        GraphView ->
+            "GRAPH"
+
+        WaterfallView ->
+            "WATERFALL"
+
+
+{-| The always-visible hints of the status bar: the keys that matter in this view.
+-}
+barHints : View -> List ( String, String )
+barHints v =
+    let
+        common =
+            [ ( "⏎", "discuss" ), ( "c", "comment" ), ( "a", "ask" ), ( "n", "new" ), ( "SPC", "menu" ), ( "?", "keys" ) ]
+    in
+    case v of
+        KanbanView ->
+            [ ( "hjkl", "move" ), ( "HL", "to column" ), ( "JK", "priority" ) ] ++ common
+
+        ListView ->
+            [ ( "jk", "move" ), ( "HL", "status" ), ( "JK", "priority" ) ] ++ common
+
+        GraphView ->
+            [ ( "jk", "select" ), ( "HL", "status" ), ( "JK", "priority" ) ] ++ common
+
+        WaterfallView ->
+            [ ( "jk", "row" ), ( "hl", "scroll" ), ( "HL", "move task" ), ( "<>", "shorten/extend" ), ( "drag", "move" ) ] ++ common

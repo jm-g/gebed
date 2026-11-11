@@ -1,6 +1,6 @@
-module Layout exposing (Bar, Node, bars, layers)
+module Layout exposing (Node, layers)
 
-{-| Pure layout for the dependency graph and the waterfall.
+{-| Pure layout for the dependency graph.
 -}
 
 import Board
@@ -68,42 +68,3 @@ layers beads edges =
     in
     List.range 0 (n - 1)
         |> List.concatMap (\l -> rowIn l (List.filter (\b -> layerOf b == l) sorted))
-
-
-type alias Bar =
-    { bead : Bead
-    , startPct : Float
-    , widthPct : Float
-    }
-
-
-{-| Waterfall bars on one time axis: from creation to closing, or to the last
-update while the bead is open. Rows follow creation time.
--}
-bars : List Bead -> List Bar
-bars beads =
-    let
-        endOf b =
-            Maybe.withDefault b.updatedMs b.closedMs |> max b.createdMs
-
-        first =
-            List.map .createdMs beads |> List.minimum |> Maybe.withDefault 0
-
-        last =
-            List.map endOf beads |> List.maximum |> Maybe.withDefault 0
-
-        span =
-            toFloat (max 1 (last - first))
-
-        pct ms =
-            100 * toFloat (ms - first) / span
-    in
-    beads
-        |> List.sortBy (\b -> ( b.createdMs, b.id ))
-        |> List.map
-            (\b ->
-                { bead = b
-                , startPct = pct b.createdMs
-                , widthPct = max 0.8 (pct (endOf b) - pct b.createdMs)
-                }
-            )

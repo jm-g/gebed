@@ -70,3 +70,11 @@ func TestAddCommentArgv(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestSetScheduleArgv(t *testing.T) {
+	op := SetSchedule{must(model.ParseID("x-1")), must(model.ParseDate("2026-11-20")), must(model.ParseDays(3))}
+	want := []string{"update", "x-1", "--due=2026-11-20", "--estimate=4320", "--json"}
+	if got := op.argv(); !slices.Equal(got, want) {
+		t.Fatalf("got %q", got)
+	}
+}

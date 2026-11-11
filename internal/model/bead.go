@@ -118,6 +118,8 @@ type Bead struct {
 	Created        time.Time
 	Updated        time.Time
 	Closed         *time.Time
+	Due            *time.Time // delivery estimate
+	EstimateMin    int        // planned length, minutes (0 = none)
 	CloseReason    string
 	DepCount       int
 	DependentCount int

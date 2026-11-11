@@ -61,6 +61,10 @@ type beadJSON struct {
 	DependentCount int        `json:"dependentCount"`
 	Deps           []depJSON  `json:"deps"`
 	// Unix milliseconds, for the waterfall; ClosedMs is nil while the bead is open.
+	// Due is the delivery day (YYYY-MM-DD in the local zone, empty when unset); the
+	// planned start is Due minus EstDays. EstDays is 0 when no estimate is set.
+	Due       string `json:"due"`
+	EstDays   int    `json:"estDays"`
 	CreatedMs int64  `json:"createdMs"`
 	UpdatedMs int64  `json:"updatedMs"`
 	ClosedMs  *int64 `json:"closedMs"`
@@ -80,13 +84,20 @@ func toJSON(b model.Bead) beadJSON {
 		m := b.Closed.UnixMilli()
 		closedMs = &m
 	}
+	due, est := "", 0
+	if b.Due != nil {
+		due = model.DateOf(*b.Due, time.Local).String()
+	}
+	if b.EstimateMin > 0 {
+		est = model.DaysOfMinutes(b.EstimateMin).Int()
+	}
 	return beadJSON{
 		ID: b.ID.String(), Title: b.Title, Description: b.Description, Design: b.Design,
 		Acceptance: b.Acceptance, Notes: b.Notes, Status: b.Status.String(), Kind: b.Kind.String(),
 		Priority: b.Priority.Int(), Assignee: b.Assignee, Owner: b.Owner, Labels: labels,
 		Created: b.Created, Updated: b.Updated, Closed: b.Closed, CloseReason: b.CloseReason,
 		DepCount: b.DepCount, DependentCount: b.DependentCount, Deps: deps,
-		CreatedMs: b.Created.UnixMilli(), UpdatedMs: b.Updated.UnixMilli(), ClosedMs: closedMs,
+		Due: due, EstDays: est, CreatedMs: b.Created.UnixMilli(), UpdatedMs: b.Updated.UnixMilli(), ClosedMs: closedMs,
 	}
 }
 

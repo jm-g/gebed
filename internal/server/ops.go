@@ -23,6 +23,8 @@ type opJSON struct {
 	Type     string `json:"type"`
 	Priority int    `json:"priority"`
 	Text     string `json:"text"`
+	Due      string `json:"due"`
+	Days     int    `json:"days"`
 }
 
 func parseOp(o opJSON, user string) (store.Op, error) {
@@ -85,6 +87,13 @@ func parseOp(o opJSON, user string) (store.Op, error) {
 			return nil, err
 		}
 		return store.Reopen{ID: id}, nil
+	case "setSchedule":
+		d, err := model.ParseDate(o.Due)
+		n, err2 := model.ParseDays(o.Days)
+		if err := firstErr(needID(), err, err2); err != nil {
+			return nil, err
+		}
+		return store.SetSchedule{ID: id, Due: d, Days: n}, nil
 	case "addComment":
 		b, err := model.ParseBody(o.Text)
 		au, err2 := model.ParseAuthor(user)
@@ -149,4 +158,4 @@ func (a *api) applyOp(w http.ResponseWriter, r *http.Request) {
 }
 
 // OpNames lists every op parseOp accepts; the MCP server must expose each one.
-var OpNames = []string{"create", "setTitle", "setStatus", "setPriority", "addLabel", "removeLabel", "close", "reopen", "addDep", "addComment"}
+var OpNames = []string{"create", "setTitle", "setStatus", "setPriority", "addLabel", "removeLabel", "close", "reopen", "addDep", "addComment", "setSchedule"}

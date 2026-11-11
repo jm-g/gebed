@@ -4,14 +4,18 @@ import Board
 import Browser
 import Browser.Dom as Dom
 import Browser.Events
+import Calendar
 import Html exposing (Html, div, li, span, text, textarea, ul)
 import Html.Attributes as A exposing (class, classList)
 import Html.Events exposing (onClick, onInput)
 import Http
 import Json.Decode as D
 import Json.Encode as E
-import Keys exposing (Action(..), ComposeKind(..), Outcome(..), View(..))
+import Keys exposing (Action(..), ComposeKind(..), Dir(..), Outcome(..), View(..))
 import Layout
+import Nav
+import Schedule
+import Stats
 import Svg
 import Svg.Attributes as SA
 import Task
@@ -47,7 +51,9 @@ type alias Model =
     , themes : List Theme.Scheme
     , themeIdx : Int
     , view : View
-    , sel : Int
+    , selId : Maybe String
+    , today : Int
+    , drag : Maybe Drag
     , pending : List String
     , help : Bool
     , detail : Maybe Detail
@@ -56,6 +62,14 @@ type alias Model =
     , version : Maybe String
     , flash : Maybe String
     , edges : List Edge
+    }
+
+
+type alias Drag =
+    { id : String
+    , startX : Float
+    , dx : Float
+    , plan : Schedule.Plan
     }
 
 
@@ -83,6 +97,11 @@ type Msg
     | Submit
     | CancelCompose
     | Mention String
+    | GotToday Int
+    | Select String
+    | DragStart String Float
+    | DragMove Float
+    | DragEnd
     | NoOp
 
 
@@ -96,8 +115,10 @@ main =
                   , beads = Loading
                   , themes = []
                   , themeIdx = 0
-                  , view = ListView
-                  , sel = 0
+                  , view = KanbanView
+                  , selId = Nothing
+                  , today = 0
+                  , drag = Nothing
                   , pending = []
                   , help = False
                   , detail = Nothing
@@ -107,16 +128,25 @@ main =
                   , flash = Nothing
                   , edges = []
                   }
-                , Cmd.batch [ getRepos, getThemes ]
+                , Cmd.batch [ getRepos, getThemes, getToday ]
                 )
         , update = update
         , view = view
         , subscriptions =
-            \_ ->
+            \model ->
                 Sub.batch
-                    [ Browser.Events.onKeyDown keyDecoder
-                    , Time.every 2000 Tick
-                    ]
+                    ([ Browser.Events.onKeyDown keyDecoder
+                     , Time.every 2000 Tick
+                     ]
+                        ++ (if model.drag /= Nothing then
+                                [ Browser.Events.onMouseMove (D.map DragMove (D.field "pageX" D.float))
+                                , Browser.Events.onMouseUp (D.succeed DragEnd)
+                                ]
+
+                            else
+                                []
+                           )
+                    )
         }
 
 
@@ -290,11 +320,11 @@ opResultDecoder =
 -- STATE HELPERS
 
 
-ordered : Model -> List Bead
-ordered model =
+visible : Model -> List Bead
+visible model =
     case model.beads of
         Ready bs ->
-            Board.ordered bs
+            Nav.order model.today model.view bs
 
         _ ->
             []
@@ -302,12 +332,16 @@ ordered model =
 
 selected : Model -> Maybe Bead
 selected model =
-    ordered model |> List.drop model.sel |> List.head
+    let
+        vs =
+            visible model
+    in
+    case model.selId |> Maybe.andThen (\id -> List.filter (\b -> b.id == id) vs |> List.head) of
+        Just b ->
+            Just b
 
-
-clamp : Model -> Model
-clamp model =
-    { model | sel = max 0 (min (List.length (ordered model) - 1) model.sel) }
+        Nothing ->
+            List.head vs
 
 
 {-| The bead an edit applies to: the open discussion, else the selection.
@@ -367,6 +401,49 @@ update msg model =
         NoOp ->
             ( model, Cmd.none )
 
+        GotToday d ->
+            ( { model | today = d }, Cmd.none )
+
+        Select id ->
+            ( { model | selId = Just id }, Cmd.none )
+
+        DragStart id x ->
+            case model.beads of
+                Ready bs ->
+                    case List.filter (\b -> b.id == id) bs |> List.head of
+                        Just b ->
+                            ( { model | selId = Just id, drag = Just { id = id, startX = x, dx = 0, plan = Schedule.plan model.today b } }, Cmd.none )
+
+                        Nothing ->
+                            ( model, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        DragMove x ->
+            ( { model | drag = Maybe.map (\d -> { d | dx = x - d.startX }) model.drag }, Cmd.none )
+
+        DragEnd ->
+            case ( model.drag, model.beads ) of
+                ( Just d, Ready bs ) ->
+                    let
+                        moved =
+                            round (d.dx / toFloat dayW)
+                    in
+                    case List.filter (\b -> b.id == d.id) bs |> List.head of
+                        Just b ->
+                            if moved == 0 then
+                                ( { model | drag = Nothing }, Cmd.none )
+
+                            else
+                                schedule { model | drag = Nothing } b { due = d.plan.due + moved, days = d.plan.days }
+
+                        Nothing ->
+                            ( { model | drag = Nothing }, Cmd.none )
+
+                _ ->
+                    ( { model | drag = Nothing }, Cmd.none )
+
         GotRepos (Ok repos) ->
             let
                 keep =
@@ -410,7 +487,7 @@ update msg model =
             ( { model | flash = Just ("edges: " ++ httpError e) }, Cmd.none )
 
         Pick name ->
-            ( { model | current = Just name, beads = Loading, sel = 0, detail = Nothing, version = Nothing }
+            ( { model | current = Just name, beads = Loading, selId = Nothing, detail = Nothing, version = Nothing }
             , getBeads name
             )
 
@@ -422,7 +499,7 @@ update msg model =
             else
                 case result of
                     Ok bs ->
-                        ( clamp { model | beads = Ready bs }, Cmd.none )
+                        ( { model | beads = Ready bs }, Cmd.none )
 
                     Err e ->
                         ( { model | beads = Failed (httpError e) }, Cmd.none )
@@ -436,10 +513,10 @@ update msg model =
         Tick _ ->
             case model.current of
                 Just name ->
-                    ( model, getVersion name )
+                    ( model, Cmd.batch [ getVersion name, getToday ] )
 
                 Nothing ->
-                    ( model, Cmd.none )
+                    ( model, getToday )
 
         GotVersion name (Ok v) ->
             if model.current /= Just name || model.version == Just v then
@@ -525,7 +602,7 @@ update msg model =
                     ( model, Cmd.none )
 
         RepoAdded (Ok name) ->
-            ( { model | compose = Nothing, current = Just name, beads = Loading, sel = 0, detail = Nothing, version = Nothing, flash = Just ("added " ++ name) }
+            ( { model | compose = Nothing, current = Just name, beads = Loading, selId = Nothing, detail = Nothing, version = Nothing, flash = Just ("added " ++ name) }
             , Cmd.batch [ getRepos, getBeads name ]
             )
 
@@ -628,17 +705,62 @@ linkRef raw =
 run : Action -> Model -> ( Model, Cmd Msg )
 run action model =
     case action of
-        Down ->
-            ( clamp { model | sel = model.sel + 1 }, Cmd.none )
+        Move dir ->
+            case ( model.view, dir ) of
+                ( WaterfallView, Left ) ->
+                    ( model, scrollTimeline -7 )
 
-        Up ->
-            ( clamp { model | sel = model.sel - 1 }, Cmd.none )
+                ( WaterfallView, Right ) ->
+                    ( model, scrollTimeline 7 )
+
+                _ ->
+                    case model.beads of
+                        Ready bs ->
+                            ( { model | selId = Nav.step model.today model.view dir (Maybe.map .id (selected model)) bs }, Cmd.none )
+
+                        _ ->
+                            ( model, Cmd.none )
 
         Top ->
-            ( { model | sel = 0 }, Cmd.none )
+            ( { model | selId = visible model |> List.head |> Maybe.map .id }, Cmd.none )
 
         Bottom ->
-            ( clamp { model | sel = List.length (ordered model) - 1 }, Cmd.none )
+            ( { model | selId = visible model |> List.reverse |> List.head |> Maybe.map .id }, Cmd.none )
+
+        Push dx ->
+            case ( model.view, target model ) of
+                ( WaterfallView, Just b ) ->
+                    schedule model b (Schedule.slide model.today dx b)
+
+                ( _, Just b ) ->
+                    pushStatus dx b model
+
+                _ ->
+                    ( model, Cmd.none )
+
+        Bump dy ->
+            case target model of
+                Just b ->
+                    let
+                        p =
+                            clampInt 0 4 (b.priority + dy)
+                    in
+                    if p == b.priority then
+                        ( { model | flash = Just ("already P" ++ String.fromInt p) }, Cmd.none )
+
+                    else
+                        edit model (\_ -> [ ( "op", E.string "setPriority" ), ( "id", E.string b.id ), ( "priority", E.int p ) ])
+
+                Nothing ->
+                    ( model, Cmd.none )
+
+        Stretch d ->
+            case ( model.view, target model ) of
+                ( WaterfallView, Just b ) ->
+                    schedule model b (Schedule.stretch model.today d b)
+
+                _ ->
+                    ( { model | flash = Just "< and > resize a task on the waterfall (SPC v w)" }, Cmd.none )
 
         Show v ->
             ( { model | view = v }
@@ -714,6 +836,104 @@ run action model =
             edit model (\b -> [ ( "op", E.string "reopen" ), ( "id", E.string b.id ) ])
 
 
+{-| H and L: move the card to the neighbour column. Out of closed it reopens first, so the
+card lands where it was sent.
+-}
+pushStatus : Int -> Bead -> Model -> ( Model, Cmd Msg )
+pushStatus dx b model =
+    let
+        cols =
+            case model.beads of
+                Ready bs ->
+                    Board.statusOrder bs
+
+                _ ->
+                    []
+
+        labels =
+            List.map statusLabel cols
+
+        i =
+            labels |> List.indexedMap Tuple.pair |> List.filter (\( _, l ) -> l == statusLabel b.status) |> List.head |> Maybe.map Tuple.first |> Maybe.withDefault 0
+
+        j =
+            clampInt 0 (List.length cols - 1) (i + dx)
+    in
+    case List.drop j cols |> List.head of
+        Just s ->
+            if j == i then
+                ( { model
+                    | flash =
+                        Just
+                            ("already in the "
+                                ++ (if dx < 0 then
+                                        "first"
+
+                                    else
+                                        "last"
+                                   )
+                                ++ " column"
+                            )
+                  }
+                , Cmd.none
+                )
+
+            else if s == Types.Closed then
+                edit model (\_ -> [ ( "op", E.string "close" ), ( "id", E.string b.id ) ])
+
+            else
+                edit model (\_ -> [ ( "op", E.string "setStatus" ), ( "id", E.string b.id ), ( "status", E.string (statusLabel s) ) ])
+
+        Nothing ->
+            ( model, Cmd.none )
+
+
+{-| Plan a bead: show the new dates at once, then store them. The next refresh
+confirms or corrects what the screen shows.
+-}
+schedule : Model -> Bead -> Schedule.Plan -> ( Model, Cmd Msg )
+schedule model b p =
+    case model.current of
+        Just repo ->
+            ( { model
+                | beads =
+                    mapBeads
+                        (\x ->
+                            if x.id == b.id then
+                                { x | due = Calendar.toIso p.due, estDays = p.days }
+
+                            else
+                                x
+                        )
+                        model.beads
+              }
+            , postOp repo (scheduleFields p b)
+            )
+
+        Nothing ->
+            ( model, Cmd.none )
+
+
+mapBeads : (Bead -> Bead) -> Loaded (List Bead) -> Loaded (List Bead)
+mapBeads f l =
+    case l of
+        Ready bs ->
+            Ready (List.map f bs)
+
+        other ->
+            other
+
+
+clampInt : Int -> Int -> Int -> Int
+clampInt lo hi n =
+    max lo (min hi n)
+
+
+scheduleFields : Schedule.Plan -> Bead -> List ( String, E.Value )
+scheduleFields p b =
+    [ ( "op", E.string "setSchedule" ), ( "id", E.string b.id ), ( "due", E.string (Calendar.toIso p.due) ), ( "days", E.int p.days ) ]
+
+
 edit : Model -> (Bead -> List ( String, E.Value )) -> ( Model, Cmd Msg )
 edit model fields =
     case ( target model, model.current ) of
@@ -757,10 +977,13 @@ view model =
                 |> Maybe.map Theme.vars
                 |> Maybe.withDefault []
     in
-    div (class "app" :: themeVars)
-        [ div [ class "sidebar" ] (loaded model.repos (viewRepos model.current))
-        , div [ class "main" ] (viewMain model)
-        , viewDetail model
+    div (class "root" :: themeVars)
+        [ viewBar model
+        , div [ class "app" ]
+            [ div [ class "sidebar" ] (loaded model.repos (viewRepos model.current))
+            , div [ class "main" ] (viewMain model)
+            , viewDetail model
+            ]
         , viewFlash model
         , viewPopup model
         ]
@@ -838,45 +1061,16 @@ viewBodyWith model beads =
     in
     case model.view of
         ListView ->
-            [ ul [ class "beads" ] (List.map (beadRow sel) (Board.ordered beads)) ]
+            [ viewList sel beads ]
 
         KanbanView ->
-            [ div [ class "kanban" ] (List.map (column sel) (Board.columns beads)) ]
+            [ viewKanban sel beads ]
 
         GraphView ->
             [ viewGraph sel beads model.edges ]
 
         WaterfallView ->
-            [ viewWaterfall sel beads ]
-
-
-beadRow : Maybe String -> Bead -> Html Msg
-beadRow sel b =
-    li [ classList [ ( "current", sel == Just b.id ) ] ]
-        [ span [ class "id" ] [ text b.id ]
-        , span [ class "status" ] [ text (statusLabel b.status) ]
-        , span [ class "prio" ] [ text ("P" ++ String.fromInt b.priority) ]
-        , span [ class "title" ] [ text b.title ]
-        , span [ class "labels dim" ] [ text (String.join " " b.labels) ]
-        ]
-
-
-column : Maybe String -> ( String, List Bead ) -> Html Msg
-column sel ( label, beads ) =
-    div [ class "col" ]
-        (div [ class "colhead" ] [ text (label ++ " " ++ String.fromInt (List.length beads)) ]
-            :: List.map (card sel) beads
-        )
-
-
-card : Maybe String -> Bead -> Html Msg
-card sel b =
-    div [ classList [ ( "card", True ), ( "current", sel == Just b.id ) ] ]
-        [ span [ class "id" ] [ text b.id ]
-        , span [ class "prio" ] [ text (" P" ++ String.fromInt b.priority) ]
-        , div [] [ text b.title ]
-        , div [ class "labels dim" ] [ text (String.join " " b.labels) ]
-        ]
+            [ viewWaterfall model sel beads ]
 
 
 viewDetail : Model -> Html Msg
@@ -1113,43 +1307,6 @@ viewGraph sel beads edges =
         (List.concatMap link edges ++ List.map node nodes)
 
 
-viewWaterfall : Maybe String -> List Bead -> Html Msg
-viewWaterfall sel beads =
-    div [ class "waterfall" ]
-        (List.map
-            (\b ->
-                div [ classList [ ( "wrow", True ), ( "current", sel == Just b.bead.id ) ] ]
-                    [ span [ class "wlabel" ] [ span [ class "id" ] [ text b.bead.id ], text (" " ++ String.left 30 b.bead.title) ]
-                    , div [ class "wtrack" ]
-                        [ div
-                            [ class ("wbar " ++ statusClass b.bead)
-                            , A.style "left" (String.fromFloat b.startPct ++ "%")
-                            , A.style "width" (String.fromFloat b.widthPct ++ "%")
-                            ]
-                            []
-                        ]
-                    ]
-            )
-            (Layout.bars beads)
-        )
-
-
-statusClass : Bead -> String
-statusClass b =
-    case b.status of
-        Types.Closed ->
-            "done"
-
-        Types.InProgress ->
-            "doing"
-
-        Types.Blocked ->
-            "blocked"
-
-        _ ->
-            "todo"
-
-
 {-| The main pane. With no repos it says how to add one, so the page is never blank.
 -}
 viewMain : Model -> List (Html Msg)
@@ -1165,3 +1322,407 @@ viewMain model =
 
         _ ->
             loaded model.beads (viewBody model)
+
+
+dayW : Int
+dayW =
+    32
+
+
+getToday : Cmd Msg
+getToday =
+    Task.map2
+        (\zone now ->
+            Calendar.fromYmd (Time.toYear zone now) (monthNumber (Time.toMonth zone now)) (Time.toDay zone now)
+        )
+        Time.here
+        Time.now
+        |> Task.perform GotToday
+
+
+monthNumber : Time.Month -> Int
+monthNumber m =
+    case m of
+        Time.Jan ->
+            1
+
+        Time.Feb ->
+            2
+
+        Time.Mar ->
+            3
+
+        Time.Apr ->
+            4
+
+        Time.May ->
+            5
+
+        Time.Jun ->
+            6
+
+        Time.Jul ->
+            7
+
+        Time.Aug ->
+            8
+
+        Time.Sep ->
+            9
+
+        Time.Oct ->
+            10
+
+        Time.Nov ->
+            11
+
+        Time.Dec ->
+            12
+
+
+scrollTimeline : Int -> Cmd Msg
+scrollTimeline days =
+    Dom.getViewportOf "wf"
+        |> Task.andThen (\v -> Dom.setViewportOf "wf" (max 0 (v.viewport.x + toFloat (days * dayW))) v.viewport.y)
+        |> Task.attempt (\_ -> NoOp)
+
+
+
+-- STATUS BAR
+
+
+viewBar : Model -> Html Msg
+viewBar model =
+    let
+        beads =
+            case model.beads of
+                Ready bs ->
+                    bs
+
+                _ ->
+                    []
+
+        ( mode, modeClass ) =
+            if model.compose /= Nothing then
+                ( "-INSERT-", "insert" )
+
+            else if model.drag /= Nothing then
+                ( "-DRAG-", "drag" )
+
+            else
+                ( "-NORMAL-", "normal" )
+
+        pending =
+            model.pending
+                |> List.map
+                    (\k ->
+                        if k == " " then
+                            "SPC"
+
+                        else
+                            k
+                    )
+                |> String.join " "
+    in
+    div [ class "bar" ]
+        [ span [ class ("mode " ++ modeClass) ] [ text mode ]
+        , span [ class "pending" ] [ text pending ]
+        , span [ class "vname" ] [ text (Keys.viewName model.view) ]
+        , span [ class "stats" ] (List.map (\s -> span [ class "stat" ] [ text s ]) (Stats.summary model.today model.view beads model.edges))
+        , span [ class "hints" ]
+            (List.map
+                (\( k, label ) -> span [ class "hint" ] [ span [ class "key" ] [ text k ], text (" " ++ label) ])
+                (Keys.barHints model.view)
+            )
+        ]
+
+
+
+-- BEADS: SHARED PIECES
+
+
+statusClass : Types.Status -> String
+statusClass s =
+    case s of
+        Types.Open ->
+            "open"
+
+        Types.InProgress ->
+            "doing"
+
+        Types.Blocked ->
+            "blocked"
+
+        Types.Closed ->
+            "done"
+
+        _ ->
+            "other"
+
+
+{-| Labels keep one color each: the same word always gets the same hue.
+-}
+labelChip : String -> Html Msg
+labelChip l =
+    span [ class ("chip lc" ++ String.fromInt (modBy 7 (List.sum (List.map Char.toCode (String.toList l))))) ] [ text l ]
+
+
+prioBadge : Bead -> Html Msg
+prioBadge b =
+    span [ class ("prio p" ++ String.fromInt b.priority), A.title (prioName b.priority) ] [ text ("P" ++ String.fromInt b.priority) ]
+
+
+prioName : Int -> String
+prioName p =
+    case p of
+        0 ->
+            "critical"
+
+        1 ->
+            "high"
+
+        2 ->
+            "medium"
+
+        3 ->
+            "low"
+
+        _ ->
+            "backlog"
+
+
+dueText : Bead -> String
+dueText b =
+    if String.isEmpty b.due then
+        ""
+
+    else
+        String.dropLeft 5 b.due
+
+
+
+-- KANBAN
+
+
+viewKanban : Maybe String -> List Bead -> Html Msg
+viewKanban sel beads =
+    div [ class "kanban" ] (List.map (column sel) (Board.columns beads))
+
+
+column : Maybe String -> ( Types.Status, List Bead ) -> Html Msg
+column sel ( status, beads ) =
+    div [ class ("col st-" ++ statusClass status) ]
+        [ div [ class "colhead" ]
+            [ span [ class "colname" ] [ text (statusLabel status) ]
+            , span [ class "colcount" ] [ text (String.fromInt (List.length beads)) ]
+            ]
+        , div [ class "cards" ]
+            (if List.isEmpty beads then
+                [ div [ class "colempty" ] [ text "nothing here — H and L move a card in" ] ]
+
+             else
+                List.map (card sel) beads
+            )
+        ]
+
+
+card : Maybe String -> Bead -> Html Msg
+card sel b =
+    div [ classList [ ( "card", True ), ( "current", sel == Just b.id ) ], onClick (Select b.id) ]
+        [ div [ class "cardtop" ]
+            [ span [ class "id" ] [ text b.id ]
+            , prioBadge b
+            , span [ class "kind" ] [ text b.kind ]
+            ]
+        , div [ class "ctitle" ] [ text b.title ]
+        , if List.isEmpty b.labels then
+            text ""
+
+          else
+            div [ class "chips" ] (List.map labelChip b.labels)
+        , div [ class "cardfoot" ]
+            [ span []
+                [ text
+                    (if String.isEmpty b.assignee then
+                        ""
+
+                     else
+                        "@" ++ b.assignee
+                    )
+                ]
+            , span []
+                [ text
+                    (if String.isEmpty b.due then
+                        ""
+
+                     else
+                        "due " ++ dueText b
+                    )
+                ]
+            , span []
+                [ text
+                    (if b.depCount > 0 then
+                        "⛓ " ++ String.fromInt b.depCount
+
+                     else
+                        ""
+                    )
+                ]
+            ]
+        ]
+
+
+
+-- LIST
+
+
+viewList : Maybe String -> List Bead -> Html Msg
+viewList sel beads =
+    div [ class "list" ]
+        (div [ class "lrow lhead" ]
+            [ span [] [ text "" ]
+            , span [] [ text "ID" ]
+            , span [] [ text "STATUS" ]
+            , span [] [ text "TITLE" ]
+            , span [] [ text "LABELS" ]
+            , span [] [ text "OWNER" ]
+            , span [] [ text "DUE" ]
+            ]
+            :: List.map (listRow sel) (Board.ordered beads)
+        )
+
+
+listRow : Maybe String -> Bead -> Html Msg
+listRow sel b =
+    div [ classList [ ( "lrow", True ), ( "current", sel == Just b.id ) ], onClick (Select b.id) ]
+        [ prioBadge b
+        , span [ class "id" ] [ text b.id ]
+        , span [ class ("status st-" ++ statusClass b.status) ] [ text (statusLabel b.status) ]
+        , span [ class "ltitle" ] [ text b.title, span [ class "kind" ] [ text ("  " ++ b.kind) ] ]
+        , span [ class "chips" ] (List.map labelChip b.labels)
+        , span [ class "dim" ]
+            [ text
+                (if String.isEmpty b.assignee then
+                    "—"
+
+                 else
+                    "@" ++ b.assignee
+                )
+            ]
+        , span [ class "dim" ]
+            [ text
+                (if String.isEmpty b.due then
+                    "—"
+
+                 else
+                    dueText b
+                )
+            ]
+        ]
+
+
+
+-- WATERFALL
+
+
+viewWaterfall : Model -> Maybe String -> List Bead -> Html Msg
+viewWaterfall model sel beads =
+    let
+        ss =
+            Schedule.spans model.today beads
+
+        ( from, to ) =
+            Schedule.window model.today ss
+
+        total =
+            (to - from + 1) * dayW
+
+        px d =
+            (d - from) * dayW
+
+        days =
+            List.range from to
+
+        cell d =
+            span
+                [ classList [ ( "wd", True ), ( "wend", Calendar.weekend d ), ( "wnow", d == model.today ) ] ]
+                [ text (String.fromInt (Calendar.dayOfMonth d)) ]
+
+        monthCell d =
+            span [ class "wm" ]
+                [ text
+                    (if d == from || Calendar.dayOfMonth d == 1 then
+                        let
+                            c =
+                                Calendar.civil d
+                        in
+                        Calendar.monthName c.month ++ " " ++ String.fromInt c.year
+
+                     else
+                        ""
+                    )
+                ]
+
+        shift s =
+            case model.drag of
+                Just d ->
+                    if d.id == s.bead.id then
+                        round (d.dx / toFloat dayW)
+
+                    else
+                        0
+
+                Nothing ->
+                    0
+
+        bar s =
+            let
+                late =
+                    s.scheduled && s.end < model.today && s.bead.status /= Types.Closed
+
+                left =
+                    px (s.start + shift s)
+            in
+            div
+                [ classList
+                    [ ( "wbar", True )
+                    , ( "wbar-" ++ statusClass s.bead.status, True )
+                    , ( "unsched", not s.scheduled )
+                    , ( "late", late )
+                    , ( "current", sel == Just s.bead.id )
+                    , ( "dragging", shift s /= 0 )
+                    ]
+                , A.style "left" (String.fromInt left ++ "px")
+                , A.style "width" (String.fromInt ((s.end - s.start + 1) * dayW - 2) ++ "px")
+                , A.title
+                    (if s.scheduled then
+                        Calendar.toIso (s.start + shift s) ++ " → " ++ Calendar.toIso (s.end + shift s)
+
+                     else
+                        "not scheduled yet: move it with H and L, or drag it"
+                    )
+                , Html.Events.preventDefaultOn "mousedown"
+                    (D.map (\x -> ( DragStart s.bead.id x, True )) (D.field "pageX" D.float))
+                ]
+                [ text s.bead.title ]
+
+        row s =
+            div [ classList [ ( "wrow", True ), ( "current", sel == Just s.bead.id ) ] ]
+                [ span [ class "wlabel", onClick (Select s.bead.id) ]
+                    [ span [ class "id" ] [ text s.bead.id ], text (" " ++ s.bead.title) ]
+                , div [ class "wtrack", A.style "width" (String.fromInt total ++ "px") ]
+                    [ div [ class "wtoday", A.style "left" (String.fromInt (px model.today + dayW // 2) ++ "px") ] []
+                    , bar s
+                    ]
+                ]
+    in
+    div [ class "wf", A.id "wf" ]
+        (div [ class "wrow wruler" ]
+            [ span [ class "wlabel" ] [ text "" ]
+            , div [ class "wtrack", A.style "width" (String.fromInt total ++ "px") ]
+                [ div [ class "wmonths" ] (List.map monthCell days)
+                , div [ class "wdays" ] (List.map cell days)
+                ]
+            ]
+            :: List.map row ss
+        )

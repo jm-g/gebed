@@ -146,3 +146,18 @@ func (o AddComment) argv() []string {
 	return []string{"comments", "add", o.ID.String(), "--author=" + o.Author.String(), "--json", "--", o.Body.String()}
 }
 func (o AddComment) target() (model.ID, bool) { return o.ID, true }
+
+// SetSchedule sets when a bead is due (the delivery estimate) and how many days
+// it takes, so it started at Due minus Days. br and bd both store the two
+// without touching the status.
+type SetSchedule struct {
+	ID   model.ID
+	Due  model.Date
+	Days model.Days
+}
+
+func (o SetSchedule) argv() []string {
+	return []string{"update", o.ID.String(), "--due=" + o.Due.String(),
+		"--estimate=" + strconv.Itoa(o.Days.EstimateMinutes()), "--json"}
+}
+func (o SetSchedule) target() (model.ID, bool) { return o.ID, true }

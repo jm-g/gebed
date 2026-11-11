@@ -1,3 +1,5 @@
 /bin/
 /result
 /web/elm-stuff/
+.envrc
+.direnv

@@ -324,3 +324,33 @@ func TestOpNamesMatchParseOp(t *testing.T) {
 		}
 	}
 }
+
+func TestSetScheduleOp(t *testing.T) {
+	var ran []string
+	reg, _ := registry.Load(filepath.Join(t.TempDir(), "repos.json"))
+	dir := filepath.Join(t.TempDir(), "proj")
+	if err := os.MkdirAll(filepath.Join(dir, ".beads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reg.Add(dir); err != nil {
+		t.Fatal(err)
+	}
+	h := New(reg, func(_ context.Context, _, _ string, args ...string) ([]byte, error) {
+		ran = args
+		return []byte(`{}`), nil
+	}, theme.Builtin, fakePeers{}, "vic")
+	rec := get(h, "POST", "/api/repos/proj/ops", `{"op":"setSchedule","id":"x-1","due":"2026-11-20","days":3}`)
+	if rec.Code != 200 || ran[2] != "--due=2026-11-20" || ran[3] != "--estimate=4320" {
+		t.Fatalf("%d %q", rec.Code, ran)
+	}
+	for _, body := range []string{
+		`{"op":"setSchedule","id":"x-1","due":"tomorrow","days":3}`,
+		`{"op":"setSchedule","id":"x-1","due":"2026-11-20","days":0}`,
+		`{"op":"setSchedule","id":"--all","due":"2026-11-20","days":1}`,
+	} {
+		ran = nil
+		if rec := get(h, "POST", "/api/repos/proj/ops", body); rec.Code != 422 || ran != nil {
+			t.Errorf("%s: %d %q", body, rec.Code, ran)
+		}
+	}
+}

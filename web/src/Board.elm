@@ -1,4 +1,4 @@
-module Board exposing (columns, ordered)
+module Board exposing (columns, ordered, statusOrder)
 
 import Types exposing (Bead, Status(..), statusLabel)
 
@@ -6,6 +6,9 @@ import Types exposing (Bead, Status(..), statusLabel)
 rank : Status -> Int
 rank s =
     case s of
+        Draft ->
+            0
+
         Open ->
             1
 
@@ -17,9 +20,6 @@ rank s =
 
         Deferred ->
             4
-
-        Draft ->
-            0
 
         Pinned ->
             5
@@ -35,30 +35,48 @@ rank s =
 
 
 {-| Beads in board order: by status column, then priority (0 first), then id.
-List view and kanban share it, so the selection index means the same bead in both.
+List view and kanban share it, so a selection means the same bead in both.
 -}
 ordered : List Bead -> List Bead
 ordered =
     List.sortBy (\b -> ( rank b.status, b.priority, b.id ))
 
 
-{-| Kanban columns, one per status present, in board order. Beads inside a
-column keep `ordered` order.
+core : List Status
+core =
+    [ Open, InProgress, Blocked, Closed ]
+
+
+{-| The statuses a board shows: the four that every project has, plus any other
+status that some bead has, in workflow order.
 -}
-columns : List Bead -> List ( String, List Bead )
+statusOrder : List Bead -> List Status
+statusOrder beads =
+    let
+        present =
+            List.map .status beads
+
+        extra =
+            List.filter (\s -> not (List.member s core)) present
+    in
+    (core ++ extra)
+        |> List.foldl
+            (\s acc ->
+                if List.member s acc then
+                    acc
+
+                else
+                    acc ++ [ s ]
+            )
+            []
+        |> List.sortBy rank
+
+
+{-| One column per status of `statusOrder`, empty ones included, so a card can be
+moved into a column that has no cards yet.
+-}
+columns : List Bead -> List ( Status, List Bead )
 columns beads =
-    List.foldr
-        (\b acc ->
-            case acc of
-                ( label, group ) :: rest ->
-                    if label == statusLabel b.status then
-                        ( label, b :: group ) :: rest
-
-                    else
-                        ( statusLabel b.status, [ b ] ) :: acc
-
-                [] ->
-                    [ ( statusLabel b.status, [ b ] ) ]
-        )
-        []
-        (ordered beads)
+    List.map
+        (\s -> ( s, List.filter (\b -> statusLabel b.status == statusLabel s) (ordered beads) ))
+        (statusOrder beads)

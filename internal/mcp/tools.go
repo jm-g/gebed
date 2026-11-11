@@ -102,6 +102,13 @@ var tools = []tool{
 	{"gebed_remove_label", "Remove a label from a bead.",
 		[]prop{repo, beadID, {"label", "string", "The label to remove.", true}},
 		func(a args) call { return op("removeLabel", a, map[string]any{"id": a.s("id"), "label": a.s("label")}) }},
+	{"gebed_set_schedule", "Plan a bead on the waterfall: the delivery date and how many days it takes. It starts that many days before the delivery date.",
+		[]prop{repo, beadID,
+			{"due", "string", "Delivery date, YYYY-MM-DD.", true},
+			{"days", "integer", "Length in days, 1 or more.", true}},
+		func(a args) call {
+			return op("setSchedule", a, map[string]any{"id": a.s("id"), "due": a.s("due"), "days": a.i("days")})
+		}},
 	{"gebed_close", "Close a bead. Do this only after the owner confirmed the result in the discussion.",
 		[]prop{repo, beadID, {"reason", "string", "Why it is closed; cite the evidence.", false}},
 		func(a args) call { return op("close", a, map[string]any{"id": a.s("id"), "reason": a.s("reason")}) }},
